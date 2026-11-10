@@ -1,0 +1,26 @@
+# Maven / NetBeans / IntelliJ / Eclipse
+/target/
+**/target/
+nbproject/private/
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+
+# Local secrets and environment
+.env
+.env.*
+!.env.example
+*.properties.local
+**/cauhinh/bi_mat.*
+*.jks
+*.p12
+
+# Runtime/generated
+*.log
+logs/
+*.db
+*.sqlite
+.DS_Store
+Thumbs.db
