@@ -9,6 +9,7 @@
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <skipTests>false</skipTests>
   </properties>
   <build>
     <plugins>
@@ -24,6 +25,48 @@
         <configuration>
           <archive><manifest><mainClass>vn.vinabacus.UngDungVINABACUS</mainClass></manifest></archive>
         </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>kiem-thu-mvc</id>
+            <phase>test</phase>
+            <goals><goal>run</goal></goals>
+            <configuration>
+              <skip>${skipTests}</skip>
+              <target>
+                <java classname="vn.vinabacus.KiemThuDuLieuMau" fork="true" failonerror="true" dir="${project.basedir}">
+                  <classpath refid="maven.test.classpath"/>
+                  <jvmarg value="-ea"/>
+                  <jvmarg value="-Djava.awt.headless=true"/>
+                </java>
+                <java classname="vn.vinabacus.KiemThuKhungSauNguoi" fork="true" failonerror="true" dir="${project.basedir}">
+                  <classpath refid="maven.test.classpath"/>
+                  <jvmarg value="-ea"/>
+                  <jvmarg value="-Djava.awt.headless=true"/>
+                </java>
+                <java classname="vn.vinabacus.KiemThuGiaoDienDayDu" fork="true" failonerror="true" dir="${project.basedir}">
+                  <classpath refid="maven.test.classpath"/>
+                  <jvmarg value="-ea"/>
+                  <jvmarg value="-Djava.awt.headless=true"/>
+                </java>
+                <java classname="vn.vinabacus.KiemThuKienTrucMvc" fork="true" failonerror="true" dir="${project.basedir}">
+                  <classpath refid="maven.test.classpath"/>
+                  <jvmarg value="-ea"/>
+                  <jvmarg value="-Djava.awt.headless=true"/>
+                </java>
+                <java classname="vn.vinabacus.KiemThuNghiepVuMvc" fork="true" failonerror="true" dir="${project.basedir}">
+                  <classpath refid="maven.test.classpath"/>
+                  <jvmarg value="-ea"/>
+                  <jvmarg value="-Djava.awt.headless=true"/>
+                </java>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

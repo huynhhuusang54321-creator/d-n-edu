@@ -1,4 +1,4 @@
-name: VINABACUS - Java Swing Build
+name: VINABACUS - Java Swing MVC
 on:
   push:
   pull_request:
@@ -12,9 +12,7 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - name: Compile Maven
-        run: mvn -B --no-transfer-progress clean package
-      - name: Kiem thu du lieu mau
-        run: java -ea -Djava.awt.headless=true -cp target/test-classes:target/classes vn.vinabacus.KiemThuDuLieuMau
-      - name: Kiem thu cay 6 thanh vien
-        run: java -ea -Djava.awt.headless=true -cp target/test-classes:target/classes vn.vinabacus.KiemThuKhungSauNguoi
+      - name: Compile and verify MVC
+        run: mvn -B --no-transfer-progress clean verify
+      - name: Verify Swing navigation
+        run: xvfb-run -a java -ea -cp target/test-classes:target/classes vn.vinabacus.KiemThuDieuHuong

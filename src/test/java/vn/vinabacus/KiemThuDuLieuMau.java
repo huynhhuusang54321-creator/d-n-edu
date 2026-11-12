@@ -2,7 +2,7 @@ package vn.vinabacus;
 
 import vn.vinabacus.model.CoSo;
 import vn.vinabacus.model.DuLieuMau;
-import vn.vinabacus.xuly.XuLyDuLieuMau;
+import vn.vinabacus.service.XuLyDuLieuMau;
 
 public final class KiemThuDuLieuMau {
     public static void main(String[] args) {

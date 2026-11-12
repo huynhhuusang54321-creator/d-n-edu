@@ -5,7 +5,7 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import javax.imageio.ImageIO;
-import vn.vinabacus.giaodien.GiaoDienChinh;
+import vn.vinabacus.view.GiaoDienChinh;
 import vn.vinabacus.model.CoSo;
 
 /** Khởi động trực tiếp giao diện, KHÔNG có đăng nhập và KHÔNG kết nối SQL Server. */

@@ -13,7 +13,7 @@ nbproject/private/
 .env.*
 !.env.example
 *.properties.local
-**/cauhinh/bi_mat.*
+**/config/bi_mat.*
 *.jks
 *.p12
 
