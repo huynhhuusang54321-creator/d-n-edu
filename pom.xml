@@ -1,73 +1,122 @@
+
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>vn.vinabacus</groupId>
-  <artifactId>VINABACUS</artifactId>
-  <version>0.4.0-SNAPSHOT</version>
-  <name>VINABACUS - Java Swing MVC</name>
-  <properties>
-    <maven.compiler.release>17</maven.compiler.release>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <skipTests>false</skipTests>
-  </properties>
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.13.0</version>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
-        <version>3.4.2</version>
-        <configuration>
-          <archive><manifest><mainClass>vn.vinabacus.UngDungVINABACUS</mainClass></manifest></archive>
-        </configuration>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-antrun-plugin</artifactId>
-        <version>3.1.0</version>
-        <executions>
-          <execution>
-            <id>kiem-thu-mvc</id>
-            <phase>test</phase>
-            <goals><goal>run</goal></goals>
-            <configuration>
-              <skip>${skipTests}</skip>
-              <target>
-                <java classname="vn.vinabacus.KiemThuDuLieuMau" fork="true" failonerror="true" dir="${project.basedir}">
-                  <classpath refid="maven.test.classpath"/>
-                  <jvmarg value="-ea"/>
-                  <jvmarg value="-Djava.awt.headless=true"/>
-                </java>
-                <java classname="vn.vinabacus.KiemThuKhungSauNguoi" fork="true" failonerror="true" dir="${project.basedir}">
-                  <classpath refid="maven.test.classpath"/>
-                  <jvmarg value="-ea"/>
-                  <jvmarg value="-Djava.awt.headless=true"/>
-                </java>
-                <java classname="vn.vinabacus.KiemThuGiaoDienDayDu" fork="true" failonerror="true" dir="${project.basedir}">
-                  <classpath refid="maven.test.classpath"/>
-                  <jvmarg value="-ea"/>
-                  <jvmarg value="-Djava.awt.headless=true"/>
-                </java>
-                <java classname="vn.vinabacus.KiemThuKienTrucMvc" fork="true" failonerror="true" dir="${project.basedir}">
-                  <classpath refid="maven.test.classpath"/>
-                  <jvmarg value="-ea"/>
-                  <jvmarg value="-Djava.awt.headless=true"/>
-                </java>
-                <java classname="vn.vinabacus.KiemThuNghiepVuMvc" fork="true" failonerror="true" dir="${project.basedir}">
-                  <classpath refid="maven.test.classpath"/>
-                  <jvmarg value="-ea"/>
-                  <jvmarg value="-Djava.awt.headless=true"/>
-                </java>
-              </target>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>vn.vinabacus</groupId>
+    <artifactId>VINABACUS</artifactId>
+    <version>0.4.0-SNAPSHOT</version>
+    <name>VINABACUS - Java Swing MVC</name>
+
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <skipTests>false</skipTests>
+    </properties>
+
+    <!-- JDBC Driver cho SQL Server -->
+    <dependencies>
+        <dependency>
+            <groupId>com.microsoft.sqlserver</groupId>
+            <artifactId>mssql-jdbc</artifactId>
+            <version>12.8.1.jre11</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>vn.vinabacus.UngDungVINABACUS</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+
+                <executions>
+                    <execution>
+                        <id>kiem-thu-mvc</id>
+                        <phase>test</phase>
+
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+
+                        <configuration>
+                            <skip>${skipTests}</skip>
+
+                            <target>
+                                <java classname="vn.vinabacus.KiemThuDuLieuMau"
+                                      fork="true"
+                                      failonerror="true"
+                                      dir="${project.basedir}">
+                                    <classpath refid="maven.test.classpath"/>
+                                    <jvmarg value="-ea"/>
+                                    <jvmarg value="-Djava.awt.headless=true"/>
+                                </java>
+
+                                <java classname="vn.vinabacus.KiemThuKhungSauNguoi"
+                                      fork="true"
+                                      failonerror="true"
+                                      dir="${project.basedir}">
+                                    <classpath refid="maven.test.classpath"/>
+                                    <jvmarg value="-ea"/>
+                                    <jvmarg value="-Djava.awt.headless=true"/>
+                                </java>
+
+                                <java classname="vn.vinabacus.KiemThuGiaoDienDayDu"
+                                      fork="true"
+                                      failonerror="true"
+                                      dir="${project.basedir}">
+                                    <classpath refid="maven.test.classpath"/>
+                                    <jvmarg value="-ea"/>
+                                    <jvmarg value="-Djava.awt.headless=true"/>
+                                </java>
+
+                                <java classname="vn.vinabacus.KiemThuKienTrucMvc"
+                                      fork="true"
+                                      failonerror="true"
+                                      dir="${project.basedir}">
+                                    <classpath refid="maven.test.classpath"/>
+                                    <jvmarg value="-ea"/>
+                                    <jvmarg value="-Djava.awt.headless=true"/>
+                                </java>
+
+                                <java classname="vn.vinabacus.KiemThuNghiepVuMvc"
+                                      fork="true"
+                                      failonerror="true"
+                                      dir="${project.basedir}">
+                                    <classpath refid="maven.test.classpath"/>
+                                    <jvmarg value="-ea"/>
+                                    <jvmarg value="-Djava.awt.headless=true"/>
+                                </java>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+        </plugins>
+    </build>
+
 </project>
