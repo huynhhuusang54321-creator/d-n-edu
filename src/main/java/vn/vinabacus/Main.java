@@ -9,6 +9,7 @@ import vn.vinabacus.service.MenuService;
 import vn.vinabacus.view.MainFrame;
 import vn.vinabacus.view.DangKyManHinh;
 import vn.vinabacus.view.NhanVienPanel;
+import vn.vinabacus.view.HangHoaPanel;
 
 public final class Main {
 
@@ -35,6 +36,18 @@ public final class Main {
             DangKyManHinh.dangKy(
                     "mn-nhan-su",
                     () -> new NhanVienPanel(CoSo.MAM_NON)
+            );
+
+            // Giao dien kho Trung tam
+            DangKyManHinh.dangKy(
+                    "tt-kho",
+                    () -> new HangHoaPanel(CoSo.TRUNG_TAM)
+            );
+
+// Giao dien kho Mam non
+            DangKyManHinh.dangKy(
+                    "mn-kho",
+                    () -> new HangHoaPanel(CoSo.MAM_NON)
             );
 
             // Mo giao dien VINABACUS
