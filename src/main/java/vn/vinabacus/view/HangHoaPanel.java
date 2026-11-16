@@ -130,6 +130,7 @@ public class HangHoaPanel extends JPanel {
         JTabbedPane tabKho = new JTabbedPane();
         tabKho.addTab("Hàng hóa & tồn kho", tabHangHoa);
         tabKho.addTab("Lịch sử nhập - xuất", new LichSuKhoPanel(coSo));
+        tabKho.addTab("Báo cáo tồn kho", new BaoCaoTonKhoPanel(coSo));
         add(tabKho, BorderLayout.CENTER);
 
         // ===== SU KIEN =====
@@ -294,11 +295,48 @@ public class HangHoaPanel extends JPanel {
         capNhatNutTheoDongChon();
     }
 
+    // ===== DANH SACH DON VI TINH =====
+    private JComboBox<String> taoComboDonViTinh(String giaTriCu) {
+        JComboBox<String> cbo = new JComboBox<>(new String[]{
+            "-- Chọn đơn vị tính --",
+            "Cái", "Chiếc", "Cây", "Quyển", "Cuốn", "Bộ",
+            "Hộp", "Tập", "Tờ", "Gói", "Thùng", "Chai",
+            "Lọ", "Lốc", "Bịch", "Cuộn", "Kg", "Mét", "Lít"
+        });
+        cbo.setEditable(false);
+
+        // Giu don vi tinh cu ngay ca khi khong co trong danh sach.
+        if (giaTriCu != null && !giaTriCu.trim().isEmpty()) {
+            String cu = giaTriCu.trim();
+            for (int i = 0; i < cbo.getItemCount(); i++) {
+                if (cu.equalsIgnoreCase(cbo.getItemAt(i))) {
+                    cbo.setSelectedIndex(i);
+                    return cbo;
+                }
+            }
+            cbo.addItem(cu);
+            cbo.setSelectedItem(cu);
+        } else {
+            cbo.setSelectedIndex(0);
+        }
+        return cbo;
+    }
+
+    private String layDonViTinh(JComboBox<String> cbo) {
+        String donVi = (String) cbo.getSelectedItem();
+        if (donVi == null
+                || donVi.isBlank()
+                || "-- Chọn đơn vị tính --".equals(donVi)) {
+            throw new IllegalArgumentException("Vui lòng chọn đơn vị tính!");
+        }
+        return donVi.trim();
+    }
+
     // ========== TAO FORM NHAP ==========
     private JPanel taoForm(
             JTextField txtMaSanPham,
             JTextField txtTenHangHoa,
-            JTextField txtDonViTinh,
+            JComboBox<String> cboDonViTinh,
             JTextField txtGiaSi,
             JTextField txtGiaXuatBan) {
 
@@ -313,7 +351,7 @@ public class HangHoaPanel extends JPanel {
         form.add(txtTenHangHoa);
 
         form.add(new JLabel("Đơn vị tính:"));
-        form.add(txtDonViTinh);
+        form.add(cboDonViTinh);
 
         form.add(new JLabel("Giá sỉ:"));
         form.add(txtGiaSi);
@@ -329,14 +367,14 @@ public class HangHoaPanel extends JPanel {
 
         JTextField txtMaSanPham = new JTextField(20);
         JTextField txtTenHangHoa = new JTextField(20);
-        JTextField txtDonViTinh = new JTextField(20);
+        JComboBox<String> cboDonViTinh = taoComboDonViTinh(null);
         JTextField txtGiaSi = new JTextField(20);
         JTextField txtGiaXuatBan = new JTextField(20);
 
         JPanel form = taoForm(
                 txtMaSanPham,
                 txtTenHangHoa,
-                txtDonViTinh,
+                cboDonViTinh,
                 txtGiaSi,
                 txtGiaXuatBan
         );
@@ -367,7 +405,7 @@ public class HangHoaPanel extends JPanel {
                     coSo,
                     txtMaSanPham.getText(),
                     txtTenHangHoa.getText(),
-                    txtDonViTinh.getText(),
+                    layDonViTinh(cboDonViTinh),
                     giaSi,
                     giaXuatBan
             );
@@ -438,8 +476,8 @@ public class HangHoaPanel extends JPanel {
                 model.getValueAt(dongModel, 2).toString(), 20
         );
 
-        JTextField txtDonViTinh = new JTextField(
-                model.getValueAt(dongModel, 3).toString(), 20
+        JComboBox<String> cboDonViTinh = taoComboDonViTinh(
+                model.getValueAt(dongModel, 3).toString()
         );
 
         JTextField txtGiaSi = new JTextField(
@@ -453,7 +491,7 @@ public class HangHoaPanel extends JPanel {
         JPanel form = taoForm(
                 txtMaSanPham,
                 txtTenHangHoa,
-                txtDonViTinh,
+                cboDonViTinh,
                 txtGiaSi,
                 txtGiaXuatBan
         );
@@ -485,7 +523,7 @@ public class HangHoaPanel extends JPanel {
                     maHangHoa,
                     txtMaSanPham.getText(),
                     txtTenHangHoa.getText(),
-                    txtDonViTinh.getText(),
+                    layDonViTinh(cboDonViTinh),
                     giaSi,
                     giaXuatBan
             );
