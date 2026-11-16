@@ -11,7 +11,9 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.table.DefaultTableModel;
-
+import javax.swing.RowFilter;
+import javax.swing.table.TableRowSorter;
+import java.util.regex.Pattern;
 import java.awt.GridLayout;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -42,7 +44,51 @@ public class NhanVienPanel extends JPanel {
 
         tieuDe.setFont(new Font("Arial", Font.BOLD, 20));
 
-        add(tieuDe, BorderLayout.NORTH);
+        JPanel panelDau = new JPanel(
+                new BorderLayout(10, 8)
+        );
+
+// Tieu de nam o tren
+        panelDau.add(tieuDe, BorderLayout.NORTH);
+
+// Thanh cong cu: nut + tim kiem + loc
+        JPanel thanhCongCu = new JPanel(
+                new BorderLayout(10, 0)
+        );
+
+// O tim kiem ben phai
+        JTextField txtTimKiem = new JTextField(18);
+
+        JPanel panelTimKiem = new JPanel();
+
+        panelTimKiem.add(
+                new JLabel("Tìm nhân viên:")
+        );
+        panelTimKiem.add(txtTimKiem);
+
+        JComboBox<String> cboLocTrangThai = new JComboBox<>(
+                new String[]{
+                    "Tất cả",
+                    "Đang công tác",
+                    "Ngừng công tác"
+                }
+        );
+
+        panelTimKiem.add(new JLabel("Trạng thái:"));
+        panelTimKiem.add(cboLocTrangThai);
+
+        thanhCongCu.add(
+                panelTimKiem,
+                BorderLayout.EAST
+        );
+
+// Dua thanh cong cu len tren bang
+        panelDau.add(
+                thanhCongCu,
+                BorderLayout.CENTER
+        );
+
+        add(panelDau, BorderLayout.NORTH);
 
         // Cac cot trong bang
         String[] tenCot = {
@@ -65,6 +111,86 @@ public class NhanVienPanel extends JPanel {
 
         bangNhanVien = new JTable(model);
         bangNhanVien.setRowHeight(30);
+
+        TableRowSorter<DefaultTableModel> sorter
+                = new TableRowSorter<>(model);
+
+        bangNhanVien.setRowSorter(sorter);
+
+// Loc danh sach khi nguoi dung nhap
+        Runnable timKiem = () -> {
+
+            String tuKhoa = txtTimKiem.getText().trim();
+
+            String trangThai = (String) cboLocTrangThai.getSelectedItem();
+
+            java.util.List<RowFilter<DefaultTableModel, Integer>> danhSachLoc = new java.util.ArrayList<>();
+
+            // Tim theo ma, ten hoac so dien thoai
+            if (!tuKhoa.isEmpty()) {
+                danhSachLoc.add(
+                        RowFilter.regexFilter(
+                                "(?iu)" + Pattern.quote(tuKhoa),
+                                0, 1, 4
+                        )
+                );
+            }
+
+            // Loc nhan vien dang cong tac
+            if ("Đang công tác".equals(trangThai)) {
+                danhSachLoc.add(
+                        RowFilter.regexFilter(
+                                "^Dang cong tac$", 7
+                        )
+                );
+            }
+
+            // Loc nhan vien ngung cong tac
+            if ("Ngừng công tác".equals(trangThai)) {
+                danhSachLoc.add(
+                        RowFilter.regexFilter(
+                                "^Ngung cong tac$", 7
+                        )
+                );
+            }
+
+            bangNhanVien.clearSelection();
+
+            if (danhSachLoc.isEmpty()) {
+                sorter.setRowFilter(null);
+            } else {
+                sorter.setRowFilter(
+                        RowFilter.andFilter(danhSachLoc)
+                );
+            }
+        };
+
+        cboLocTrangThai.addActionListener(e -> {
+            timKiem.run();
+        });
+
+        txtTimKiem.getDocument().addDocumentListener(
+                new javax.swing.event.DocumentListener() {
+
+            @Override
+            public void insertUpdate(
+                    javax.swing.event.DocumentEvent e) {
+                timKiem.run();
+            }
+
+            @Override
+            public void removeUpdate(
+                    javax.swing.event.DocumentEvent e) {
+                timKiem.run();
+            }
+
+            @Override
+            public void changedUpdate(
+                    javax.swing.event.DocumentEvent e) {
+                timKiem.run();
+            }
+        }
+        );
 
         add(new JScrollPane(bangNhanVien),
                 BorderLayout.CENTER);
@@ -193,7 +319,11 @@ public class NhanVienPanel extends JPanel {
         btnNgung.setEnabled(false);
         btnTroLai.setEnabled(false);
 // Hien thi cac nut phia duoi bang
-        add(panelNut, BorderLayout.SOUTH);
+
+        thanhCongCu.add(
+                panelNut,
+                BorderLayout.WEST
+        );
 
         bangNhanVien.getSelectionModel().addListSelectionListener(e -> {
 
