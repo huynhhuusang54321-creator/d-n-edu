@@ -1,26 +1,11 @@
-# Maven / NetBeans / IntelliJ / Eclipse
 /target/
-**/target/
-nbproject/private/
-.idea/
-*.iml
-.classpath
-.project
-.settings/
-
-# Local secrets and environment
-.env
-.env.*
-!.env.example
-*.properties.local
-**/config/bi_mat.*
-*.jks
-*.p12
-
-# Runtime/generated
+/nbproject/private/
+/.idea/
+/.vscode/
+*.class
 *.log
-logs/
-*.db
-*.sqlite
+*.bak
 .DS_Store
-Thumbs.db
+# Khong dua mat khau SQL len Git
+/db.local.properties
+**/db.local.properties

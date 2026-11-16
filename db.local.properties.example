@@ -1,0 +1,4 @@
+
+db.url=jdbc:sqlserver://localhost:1433;databaseName=VINABACUS;encrypt=true;trustServerCertificate=true
+db.user=sa
+db.password=sang123
