@@ -2,6 +2,7 @@ package vn.vinabacus;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import vn.vinabacus.tv4.TV4Module;
 import vn.vinabacus.tv3.TV3Module;
 import vn.vinabacus.controller.MenuController;
 import vn.vinabacus.model.CoSo;
@@ -28,6 +29,7 @@ public final class Main {
             } catch (Exception ignored) {
             }
 
+           TV4Module.dangKy();
             // ===== TV6: NHAN SU =====
             // Nhan su Trung tam
             DangKyManHinh.dangKy(
