@@ -3,7 +3,7 @@ package vn.vinabacus;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
-
+import vn.vinabacus.tv4.TV4Module;
 import vn.vinabacus.controller.MenuController;
 import vn.vinabacus.service.MenuService;
 import vn.vinabacus.view.MainFrame;
@@ -25,7 +25,7 @@ public final class Main {
             } catch (Exception ignored) {
             }
 
-           
+           TV4Module.dangKy();
 
             // Mo giao dien VINABACUS
             MainFrame frame = new MainFrame(
