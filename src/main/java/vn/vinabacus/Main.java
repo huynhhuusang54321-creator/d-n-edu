@@ -1,9 +1,8 @@
-
 package vn.vinabacus;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
-
+import vn.vinabacus.tv3.TV3Module;
 import vn.vinabacus.controller.MenuController;
 import vn.vinabacus.model.CoSo;
 import vn.vinabacus.service.MenuService;
@@ -30,7 +29,6 @@ public final class Main {
             }
 
             // ===== TV6: NHAN SU =====
-
             // Nhan su Trung tam
             DangKyManHinh.dangKy(
                     "tt-nhan-su",
@@ -44,7 +42,6 @@ public final class Main {
             );
 
             // ===== TV6: KHO - DUNG CU =====
-
             // Kho Trung tam
             DangKyManHinh.dangKy(
                     "tt-kho",
@@ -58,9 +55,9 @@ public final class Main {
             );
 
             // ===== TV2: HOC VIEN - TUYEN SINH =====
-
             TV2Module.dangKy();
-
+// TV3 - Quan ly dao tao Trung tam
+            TV3Module.dangKy();
             // ===== MO GIAO DIEN CHINH =====
 
             MainFrame frame = new MainFrame(
