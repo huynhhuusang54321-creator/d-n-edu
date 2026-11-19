@@ -2,6 +2,7 @@ package vn.vinabacus;
 
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import vn.vinabacus.tv5.TV5Module;
 import vn.vinabacus.tv4.TV4Module;
 import vn.vinabacus.tv3.TV3Module;
 import vn.vinabacus.controller.MenuController;
@@ -28,7 +29,7 @@ public final class Main {
                 );
             } catch (Exception ignored) {
             }
-
+TV5Module.dangKy();
            TV4Module.dangKy();
             // ===== TV6: NHAN SU =====
             // Nhan su Trung tam
