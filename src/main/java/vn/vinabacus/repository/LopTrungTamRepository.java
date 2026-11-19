@@ -12,6 +12,7 @@ import vn.vinabacus.config.Database;
 import vn.vinabacus.model.LopTrungTam;
 import java.time.LocalDate;
 import java.sql.Types;
+import vn.vinabacus.repository.LichHocLopRepository.BuoiTrongTuan;
 
 /** SQL Server: LopTrungTam -> KhoaHoc / NhanVienCoSo, rang buoc MaCoSo. */
 public final class LopTrungTamRepository {
@@ -80,6 +81,36 @@ public final class LopTrungTamRepository {
 
     public int them(int maCoSo, int maKhoaHoc, String tenLop, Integer maGiaoVien,
                    LocalDate ngayKhaiGiang, String trangThai) throws SQLException {
+        try (Connection con = Database.moKetNoi()) {
+            return them(con, maCoSo, maKhoaHoc, tenLop, maGiaoVien,
+                    ngayKhaiGiang, trangThai);
+        }
+    }
+
+    /** Tạo lớp và các buổi học trong cùng giao dịch để không lưu dở dữ liệu. */
+    public int themKemLich(int maCoSo, int maKhoaHoc, String tenLop,
+                           Integer maGiaoVien, LocalDate ngayKhaiGiang,
+                           String trangThai, List<BuoiTrongTuan> cacBuoi) throws SQLException {
+        try (Connection con = Database.moKetNoi()) {
+            con.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE);
+            con.setAutoCommit(false);
+            try {
+                int maLop = them(con, maCoSo, maKhoaHoc, tenLop, maGiaoVien,
+                        ngayKhaiGiang, trangThai);
+                new LichHocLopRepository().themNhieu(con, maCoSo, maLop,
+                        cacBuoi, ngayKhaiGiang, null, "HIEU_LUC");
+                con.commit();
+                return maLop;
+            } catch (SQLException | RuntimeException ex) {
+                con.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    private int them(Connection con, int maCoSo, int maKhoaHoc, String tenLop,
+                     Integer maGiaoVien, LocalDate ngayKhaiGiang,
+                     String trangThai) throws SQLException {
         // INSERT SELECT: khong the tao lop tu khoa/mon thuoc co so khac hay da ngung.
         // Nhan vien phai ton tai trong NhanVienCoSo dung Trung tam (hoac chua phan cong).
         String sql = """
@@ -97,8 +128,7 @@ public final class LopTrungTamRepository {
                         WHERE ncs.MaNhanVien=? AND ncs.MaCoSo=?
                           AND ncs.TrangThai=1 AND nv.TrangThai=1))
                 """;
-        try (Connection con = Database.moKetNoi();
-             PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, maCoSo);
             ps.setString(2, tenLop);
             if (maGiaoVien == null) ps.setNull(3, Types.INTEGER);

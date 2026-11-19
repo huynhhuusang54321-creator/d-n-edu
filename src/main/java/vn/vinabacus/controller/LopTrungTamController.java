@@ -3,6 +3,7 @@ package vn.vinabacus.controller;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
+import vn.vinabacus.repository.LichHocLopRepository.BuoiTrongTuan;
 import vn.vinabacus.model.CoSo;
 import vn.vinabacus.model.KhoaHoc;
 import vn.vinabacus.model.LopTrungTam;
@@ -23,6 +24,11 @@ public final class LopTrungTamController {
     public int them(int maKhoaHoc, String ten, Integer maGiaoVien,
                     LocalDate ngay, String trangThai) throws SQLException {
         return service.them(maKhoaHoc, ten, maGiaoVien, ngay, trangThai);
+    }
+    public int themKemLich(int maKhoaHoc, String ten, Integer maGiaoVien,
+                           LocalDate ngay, String trangThai,
+                           List<BuoiTrongTuan> cacBuoi) throws SQLException {
+        return service.themKemLich(maKhoaHoc, ten, maGiaoVien, ngay, trangThai, cacBuoi);
     }
     public void sua(int maLop, int maKhoaHoc, String ten, Integer maGiaoVien,
                     LocalDate ngay, String trangThai) throws SQLException {

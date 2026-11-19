@@ -6,6 +6,7 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import vn.vinabacus.repository.LichHocLopRepository.BuoiTrongTuan;
 import vn.vinabacus.model.CoSo;
 import vn.vinabacus.model.KhoaHoc;
 import vn.vinabacus.model.LopTrungTam;
@@ -59,6 +60,25 @@ public final class LopTrungTamService {
         kiemTra(maKhoaHoc, tenLop, maGiaoVien, trangThai);
         return lopRepo.them(maCoSo(), maKhoaHoc, tenLop.trim(), maGiaoVien,
                 ngayKhaiGiang, trangThai);
+    }
+
+    public int themKemLich(int maKhoaHoc, String tenLop, Integer maGiaoVien,
+                           LocalDate ngayKhaiGiang, String trangThai,
+                           List<BuoiTrongTuan> cacBuoi) throws SQLException {
+        kiemTra(maKhoaHoc, tenLop, maGiaoVien, trangThai);
+        if (cacBuoi == null || cacBuoi.isEmpty())
+            throw new IllegalArgumentException("Lớp mới phải có ít nhất một buổi học");
+        if (ngayKhaiGiang == null)
+            throw new IllegalArgumentException("Hãy chọn ngày khai giảng để làm ngày bắt đầu lịch học");
+        if ("DA_DONG".equals(trangThai))
+            throw new IllegalArgumentException("Không thể tạo lịch học cho lớp đã đóng");
+        for (BuoiTrongTuan buoi : cacBuoi) {
+            if (buoi == null) throw new IllegalArgumentException("Buổi học không hợp lệ");
+            LichHocLopService.kiemTra(buoi.thu(), buoi.batDau(), buoi.ketThuc(),
+                    ngayKhaiGiang, null, "HIEU_LUC");
+        }
+        return lopRepo.themKemLich(maCoSo(), maKhoaHoc, tenLop.trim(), maGiaoVien,
+                ngayKhaiGiang, trangThai, cacBuoi);
     }
 
     public void sua(int maLop, int maKhoaHoc, String tenLop, Integer maGiaoVien,

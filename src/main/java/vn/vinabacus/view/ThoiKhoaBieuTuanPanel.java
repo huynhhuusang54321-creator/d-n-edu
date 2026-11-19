@@ -90,7 +90,7 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
         sau.addActionListener(e -> doiTuan(dauTuan.plusWeeks(1)));
         homNay.addActionListener(e -> doiTuan(LocalDate.now()));
         chonTuan.addActionListener(e -> {
-            NgayLichHocPicker chon = new NgayLichHocPicker(dauTuan);
+            NgayPicker chon = new NgayPicker(dauTuan, "Chọn ngày trong tuần");
             int ok = JOptionPane.showConfirmDialog(this, chon,
                     "Chọn một ngày trong tuần cần xem", JOptionPane.OK_CANCEL_OPTION,
                     JOptionPane.PLAIN_MESSAGE);
@@ -239,6 +239,9 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
                     LichHocLop lh = o.lich;
                     return "<html><b>" + html(lh.tenLop()) + "</b><br>" +
                             html(lh.tenKhoaHoc()) + "<br>" +
+                            html(thongTin(lh).get(0)) + "<br>" +
+                            html(thongTin(lh).get(1)) + "<br>" +
+                            html(thongTin(lh).get(2)) + "<br>" +
                             lh.gioBatDau().format(GIO) + " - " + lh.gioKetThuc().format(GIO) +
                             "<br>Từ " + lh.tuNgay() +
                             (lh.denNgay() == null ? "" : " đến " + lh.denNgay()) + "</html>";
@@ -249,6 +252,15 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
         private String html(String x) {
             return x == null ? "" : x.replace("&", "&amp;").replace("<", "&lt;")
                     .replace(">", "&gt;").replace("\"", "&quot;");
+        }
+        private String hienThi(String value, String macDinh) {
+            return value == null || value.isBlank() ? macDinh : value;
+        }
+        private List<String> thongTin(LichHocLop lh) {
+            return List.of(
+                    "Phòng: " + hienThi(lh.tenPhong(), "Chưa xếp phòng"),
+                    "Cơ sở: " + hienThi(lh.tenCoSo(), "Trung tâm"),
+                    "GV: " + hienThi(lh.tenGiaoVien(), "Chưa phân công"));
         }
         private int phut(LocalTime time) {
             return time.getHour() * 60 + time.getMinute();
@@ -353,9 +365,12 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
             FontMetrics khoa = getFontMetrics(fontKhoa);
             int dongTen = xuongDong(b.lich().tenLop(), ten, rong).size();
             int dongKhoa = xuongDong(b.lich().tenKhoaHoc(), khoa, rong).size();
+            int dongThongTin = thongTin(b.lich()).stream()
+                    .mapToInt(x -> xuongDong(x, khoa, rong).size()).sum();
             String gio = b.lich().gioBatDau().format(GIO) + " – " + b.lich().gioKetThuc().format(GIO);
             boolean tachGio = getFontMetrics(fontGio).stringWidth(gio) > rong;
-            return 11 + dongTen * 15 + 2 + dongKhoa * 13 + 3 + (tachGio ? 28 : 15) + 6;
+            return 11 + dongTen * 15 + 2 + dongKhoa * 13 + 3
+                    + dongThongTin * 13 + 3 + (tachGio ? 28 : 15) + 6;
         }
 
         private int caoNhom(NhomGio n) {
@@ -493,6 +508,13 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
             for (String line : xuongDong(lh.tenKhoaHoc(), g.getFontMetrics(), rong)) {
                 g.drawString(line, trai, y);
                 y += 13;
+            }
+            y += 3;
+            for (String thongTin : thongTin(lh)) {
+                for (String line : xuongDong(thongTin, g.getFontMetrics(), rong)) {
+                    g.drawString(line, trai, y);
+                    y += 13;
+                }
             }
             y += 3;
             g.setFont(fontGio);

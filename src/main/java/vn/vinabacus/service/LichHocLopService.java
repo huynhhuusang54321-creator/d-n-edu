@@ -6,8 +6,6 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.HashSet;
-import java.util.Set;
 import vn.vinabacus.repository.LichHocLopRepository.BuoiTrongTuan;
 import java.util.Locale;
 import vn.vinabacus.model.CoSo;
@@ -15,18 +13,21 @@ import vn.vinabacus.model.KhoaHoc;
 import vn.vinabacus.model.LichHocLop;
 import vn.vinabacus.model.LopTrungTam;
 import vn.vinabacus.model.MonHoc;
+import vn.vinabacus.model.PhongHoc;
 import vn.vinabacus.repository.KhoaHocRepository;
 import vn.vinabacus.repository.LichHocLopRepository;
 import vn.vinabacus.repository.LopTrungTamRepository;
 import vn.vinabacus.repository.MonHocRepository;
+import vn.vinabacus.repository.PhongHocRepository;
 
-/** Nghiep vu Lich hoc lop Trung tam, khong can sua SQL schema. */
+/** Nghiệp vụ lịch học Trung tâm, bao gồm kiểm tra phòng và khung giờ. */
 public final class LichHocLopService {
     private final CoSo coSo;
     private final MonHocRepository monRepo = new MonHocRepository();
     private final KhoaHocRepository khoaRepo = new KhoaHocRepository();
     private final LopTrungTamRepository lopRepo = new LopTrungTamRepository();
     private final LichHocLopRepository lichRepo = new LichHocLopRepository();
+    private final PhongHocRepository phongRepo = new PhongHocRepository();
 
     public LichHocLopService(CoSo coSo) {
         if (coSo != CoSo.TRUNG_TAM)
@@ -39,6 +40,9 @@ public final class LichHocLopService {
     public List<MonHoc> layMonHoc() throws SQLException { return monRepo.layDanhSach(maCoSo()); }
     public List<KhoaHoc> layKhoaHoc() throws SQLException { return khoaRepo.layDanhSach(maCoSo()); }
     public List<LopTrungTam> layLop() throws SQLException { return lopRepo.layDanhSach(maCoSo()); }
+    public List<PhongHoc> layPhongHoc() throws SQLException {
+        return phongRepo.layDanhSach(maCoSo());
+    }
 
     public List<LichHocLop> timKiem(String tuKhoa, String trangThai) throws SQLException {
         String tim = boDau(tuKhoa == null ? "" : tuKhoa.trim());
@@ -61,11 +65,10 @@ public final class LichHocLopService {
         if (maLop <= 0) throw new IllegalArgumentException("Hãy chọn một lớp học");
         if (cacBuoi == null || cacBuoi.isEmpty())
             throw new IllegalArgumentException("Hãy đánh dấu ít nhất một thứ học trong tuần");
-        Set<Integer> daChon = new HashSet<>();
         for (BuoiTrongTuan b : cacBuoi) {
             if (b == null) throw new IllegalArgumentException("Buổi học không hợp lệ");
-            if (!daChon.add(b.thu()))
-                throw new IllegalArgumentException("Không được chọn cùng một thứ hai lần");
+            if (b.maPhong() != null && b.maPhong() <= 0)
+                throw new IllegalArgumentException("Phòng học không hợp lệ");
             kiemTra(b.thu(), b.batDau(), b.ketThuc(), tuNgay, denNgay, trangThai);
         }
         return lichRepo.themNhieu(maCoSo(), maLop, cacBuoi, tuNgay, denNgay, trangThai);
@@ -83,7 +86,8 @@ public final class LichHocLopService {
                     LocalDate tuNgay, LocalDate denNgay, String trangThai) throws SQLException {
         if (maLichHoc <= 0) throw new IllegalArgumentException("Hãy chọn lịch cần sửa");
         kiemTra(thu, batDau, ketThuc, tuNgay, denNgay, trangThai);
-        lichRepo.sua(maCoSo(), maLichHoc, thu, batDau, ketThuc, tuNgay, denNgay, trangThai);
+        lichRepo.sua(maCoSo(), maLichHoc, thu, batDau, ketThuc,
+                tuNgay, denNgay, trangThai);
     }
 
     /** Exposed for tests without a live SQL Server. */

@@ -1,12 +1,12 @@
-﻿/* VINABACUS HOAN CHINH: CAI MOI 57 BANG + BO DU LIEU TEST HAI CO SO
-   CANH BAO: file nay CHI DANH CHO DATABASE CHUA CO BANG dbo.CoSo.
-   KHONG chay file nay tren du lieu dang su dung. Neu database da ton tai,
-   chi chay file 02_BO_SUNG_DU_LIEU_MAU.sql (khong chay lai file nay).
+﻿/* VINABACUS HOAN CHINH: CAI MOI 58 BANG + BO DU LIEU TEST HAI CO SO
+   Database moi: cai schema va du lieu mau.
+   Database VINABACUS da co dbo.CoSo: chi cap nhat PhongHoc/MaPhong,
+   bo qua bo cai va du lieu demo phia sau.
    Khong tao he thong dang nhap hay phan quyen trong ung dung.
 */
 -- =====================================================================
 -- VINABACUS / SQL Server 2017+  --  CAU TRUC TOI UU, HocVien CO MaCoSo
--- Chi cai moi. Chay bang SSMS hoac: sqlcmd -b -i <file>
+-- Cai moi hoac cap nhat PhongHoc cho database dang co. Chay bang SSMS/sqlcmd.
 -- Thay 01_TAO_BANG + 02_RANG_BUOC_CHI_MUC + 03_DANH_MUC cua file cu.
 -- Sau file nay chay tiep cac phan thu tuc/view (04..09, goi nam) cua file cu.
 -- Chua kiem thu tren SQL Server thuc te.
@@ -17,10 +17,73 @@ IF DB_ID(N'VINABACUS') IS NULL EXEC(N'CREATE DATABASE [VINABACUS]');
 GO
 USE [VINABACUS];
 GO
+-- Database da co CoSo: cap nhat them danh muc phong tren VINABACUS.
+-- CoSo chua ton tai: bo qua khoi nay va tiep tuc cai moi schema ben duoi.
+IF OBJECT_ID(N'dbo.CoSo',N'U') IS NOT NULL
+BEGIN
+    IF OBJECT_ID(N'dbo.LichHocLop',N'U') IS NULL
+        THROW 51001, N'Database VINABACUS chua co bang dbo.LichHocLop.', 1;
+
+    SET XACT_ABORT ON;
+    BEGIN TRY
+        BEGIN TRAN;
+
+        IF OBJECT_ID(N'dbo.PhongHoc',N'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.PhongHoc (
+                MaPhong INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                MaCoSo INT NOT NULL,
+                TenPhong NVARCHAR(100) NOT NULL,
+                TrangThai BIT NOT NULL DEFAULT (1),
+                CONSTRAINT UQ_PhongHoc_CoSoTen UNIQUE (MaCoSo,TenPhong),
+                CONSTRAINT UQ_PhongHoc_PhongCoSo UNIQUE (MaPhong,MaCoSo));
+        END;
+
+        IF COL_LENGTH(N'dbo.LichHocLop',N'MaPhong') IS NULL
+            ALTER TABLE dbo.LichHocLop ADD MaPhong INT NULL;
+
+        IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys
+                       WHERE parent_object_id=OBJECT_ID(N'dbo.PhongHoc')
+                         AND name=N'FK_PhongHoc_MaCoSo')
+            ALTER TABLE dbo.PhongHoc WITH CHECK
+                ADD CONSTRAINT FK_PhongHoc_MaCoSo
+                FOREIGN KEY (MaCoSo) REFERENCES dbo.CoSo(MaCoSo);
+
+        IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys
+                       WHERE parent_object_id=OBJECT_ID(N'dbo.LichHocLop')
+                         AND name=N'FK_LichHocLop_MaPhong')
+            ALTER TABLE dbo.LichHocLop WITH CHECK
+                ADD CONSTRAINT FK_LichHocLop_MaPhong
+                FOREIGN KEY (MaPhong) REFERENCES dbo.PhongHoc(MaPhong);
+
+        DECLARE @CoSoTrungTam INT=(SELECT MaCoSo FROM dbo.CoSo WHERE LoaiCoSo='TRUNG_TAM');
+        IF @CoSoTrungTam IS NULL
+            THROW 51002, N'Khong tim thay co so TRUNG_TAM trong VINABACUS.', 1;
+
+        INSERT dbo.PhongHoc(MaCoSo,TenPhong)
+        SELECT @CoSoTrungTam, v.TenPhong
+        FROM (VALUES
+            (N'CS1 - Phòng 1'), (N'CS1 - Phòng 10'), (N'CS1 - Phòng 2'),
+            (N'CS1 - Phòng 3'), (N'CS1 - Phòng 4'), (N'CS1 - Phòng 5'),
+            (N'CS1 - Phòng 7')
+        ) AS v(TenPhong)
+        WHERE NOT EXISTS (SELECT 1 FROM dbo.PhongHoc p
+                          WHERE p.MaCoSo=@CoSoTrungTam AND p.TenPhong=v.TenPhong);
+
+        COMMIT;
+        EXEC sys.sp_set_session_context @key=N'VinabacusPhongMigration', @value=1;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH;
+END
+GO
 -- Guard: neu da co bang thi BO QUA toan bo cac batch con lai (NOEXEC bat den cuoi file).
 IF OBJECT_ID(N'dbo.CoSo',N'U') IS NOT NULL
 BEGIN
-    RAISERROR(N'VINABACUS da co bang. Khong chay bo cai moi; hay dung migration.',16,1);
+    IF SESSION_CONTEXT(N'VinabacusPhongMigration') IS NULL
+        RAISERROR(N'VINABACUS da co bang. Khong chay bo cai moi.',16,1);
     SET NOEXEC ON;
 END
 GO
@@ -146,9 +209,16 @@ CREATE TABLE dbo.LopTrungTam (
     NgayKhaiGiang DATE NULL,
     TrangThai VARCHAR(20) NOT NULL DEFAULT 'DANG_MO' CHECK (TrangThai IN ('DANG_MO','DA_DONG','TAM_DUNG')),
     CONSTRAINT UQ_LopTrungTam_LopKhoaCoSo UNIQUE (MaLop,MaKhoaHoc,MaCoSo));
+CREATE TABLE dbo.PhongHoc (
+    MaPhong INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+    MaCoSo INT NOT NULL,
+    TenPhong NVARCHAR(100) NOT NULL,
+    TrangThai BIT NOT NULL DEFAULT (1),
+    CONSTRAINT UQ_PhongHoc_CoSoTen UNIQUE (MaCoSo,TenPhong),
+    CONSTRAINT UQ_PhongHoc_PhongCoSo UNIQUE (MaPhong,MaCoSo));
 CREATE TABLE dbo.LichHocLop (
     MaLichHoc INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
-    MaLop INT NOT NULL,
+    MaLop INT NOT NULL, MaPhong INT NULL,
     ThuTrongTuan TINYINT NOT NULL CHECK (ThuTrongTuan BETWEEN 2 AND 8),
     GioBatDau TIME(0) NULL, GioKetThuc TIME(0) NULL,
     TuNgay DATE NOT NULL, DenNgay DATE NULL,
@@ -592,11 +662,13 @@ INSERT #FK VALUES
 (N'PhanQuyenTaiKhoan',N'MaQuyen',N'Quyen',N'MaQuyen'),
 -- danh muc dung chung
 (N'HocVien',N'MaCoSo',N'CoSo',N'MaCoSo'),
+(N'PhongHoc',N'MaCoSo',N'CoSo',N'MaCoSo'),
 (N'MonHoc',N'MaCoSo',N'CoSo',N'MaCoSo'),
 (N'KhoaHoc',N'MaMonHoc,MaCoSo',N'MonHoc',N'MaMonHoc,MaCoSo'),
 (N'LopTrungTam',N'MaKhoaHoc,MaCoSo',N'KhoaHoc',N'MaKhoaHoc,MaCoSo'),
 (N'LopTrungTam',N'MaGiaoVien,MaCoSo',N'NhanVienCoSo',N'MaNhanVien,MaCoSo'),
 (N'LichHocLop',N'MaLop',N'LopTrungTam',N'MaLop'),
+(N'LichHocLop',N'MaPhong',N'PhongHoc',N'MaPhong'),
 (N'BuoiHoc',N'MaLop',N'LopTrungTam',N'MaLop'),
 (N'BuoiHoc',N'MaLichHoc,MaLop',N'LichHocLop',N'MaLichHoc,MaLop'),
 (N'ChuongTrinhGiamGia',N'MaCoSo',N'CoSo',N'MaCoSo'),
@@ -806,6 +878,11 @@ BEGIN TRY
   DECLARE @TT INT=(SELECT MaCoSo FROM dbo.CoSo WHERE LoaiCoSo='TRUNG_TAM');
   DECLARE @MN INT=(SELECT MaCoSo FROM dbo.CoSo WHERE LoaiCoSo='MAM_NON');
 
+  INSERT dbo.PhongHoc(MaCoSo,TenPhong) VALUES
+   (@TT,N'CS1 - Phòng 1'),(@TT,N'CS1 - Phòng 10'),(@TT,N'CS1 - Phòng 2'),
+   (@TT,N'CS1 - Phòng 3'),(@TT,N'CS1 - Phòng 4'),(@TT,N'CS1 - Phòng 5'),
+   (@TT,N'CS1 - Phòng 7');
+
   INSERT dbo.HocVien(MaCoSo,HoTen,NgaySinh,GioiTinh,TenNguoiLienHe,SoDienThoaiLienHe,DiaChi,GhiChu) VALUES
    (@TT,N'[MẪU] Nguyễn Minh Anh','20170618','NU',N'[MẪU] Phụ huynh Anh','0900000001',N'Ninh Kiều, Cần Thơ',N'Dữ liệu minh họa'),
    (@MN,N'[MẪU] Trần Hải Nam','20190826','NAM',N'[MẪU] Phụ huynh Nam','0900000002',N'Cái Răng, Cần Thơ',N'Dữ liệu minh họa'),
@@ -820,8 +897,11 @@ BEGIN TRY
   DECLARE @Kid1 INT=(SELECT MaKhoaHoc FROM dbo.KhoaHoc WHERE MaCoSo=@TT AND TenKhoaHoc=N'[MẪU] Kid 1');
   INSERT dbo.LopTrungTam(MaCoSo,MaKhoaHoc,TenLop,NgayKhaiGiang) VALUES (@TT,@Kid1,N'[MẪU] Lớp Toán A','20261110');
   DECLARE @Lop INT=SCOPE_IDENTITY();
-  INSERT dbo.LichHocLop(MaLop,ThuTrongTuan,GioBatDau,GioKetThuc,TuNgay) VALUES
-   (@Lop,3,'17:30','19:00','20261110'),(@Lop,5,'17:30','19:00','20261110'),(@Lop,7,'08:00','09:30','20261110');
+  DECLARE @P1 INT=(SELECT MaPhong FROM dbo.PhongHoc WHERE MaCoSo=@TT AND TenPhong=N'CS1 - Phòng 1');
+  DECLARE @P2 INT=(SELECT MaPhong FROM dbo.PhongHoc WHERE MaCoSo=@TT AND TenPhong=N'CS1 - Phòng 2');
+  INSERT dbo.LichHocLop(MaLop,MaPhong,ThuTrongTuan,GioBatDau,GioKetThuc,TuNgay) VALUES
+   (@Lop,@P1,3,'17:30','19:00','20261110'),(@Lop,@P2,5,'17:30','19:00','20261110'),
+   (@Lop,@P1,7,'08:00','09:30','20261110');
 
   INSERT dbo.ChuongTrinhGiamGia(MaCoSo,TenChuongTrinh,PhamViApDung,LoaiGiam,GiaTriGiam,TuNgay,DenNgay) VALUES
    (@TT,N'[MẪU] Ưu đãi học 1 năm giảm 15%','GOI_NAM','PHAN_TRAM',15,'20260101','20281231'),
@@ -844,8 +924,8 @@ END CATCH;
 GO
 
 -- ======================= 6. KIEM TRA CAU TRUC ==========================
-IF (SELECT COUNT(*) FROM sys.tables WHERE schema_id=SCHEMA_ID(N'dbo'))<>57
-    THROW 55001,N'So bang khac 57.',1;
+IF (SELECT COUNT(*) FROM sys.tables WHERE schema_id=SCHEMA_ID(N'dbo'))<>58
+    THROW 55001,N'So bang khac 58.',1;
 IF EXISTS(SELECT 1 FROM sys.foreign_keys WHERE is_not_trusted=1 OR is_disabled=1)
     THROW 55002,N'Co khoa ngoai bi tat hoac chua xac thuc.',1;
 DECLARE @du INT=CONVERT(INT,(SELECT value FROM sys.extended_properties WHERE class=0 AND name=N'SoKhoaNgoaiDuKien'));
@@ -863,6 +943,14 @@ SELECT DB_NAME() AS CoSoDuLieu,
        (SELECT COUNT(*) FROM dbo.HocVien) AS SoHocVien;
 GO
 SET NOEXEC OFF;   -- ket thuc guard
+GO
+-- Neu batch dau vua cap nhat database dang co, bo qua phan du lieu demo.
+IF TRY_CONVERT(INT, SESSION_CONTEXT(N'VinabacusPhongMigration'))=1
+BEGIN
+    EXEC sys.sp_set_session_context @key=N'VinabacusPhongMigration', @value=NULL;
+    PRINT N'OK: Da cap nhat PhongHoc va LichHocLop trong VINABACUS.';
+    SET NOEXEC ON;
+END
 GO
 
 -- ==================== BO SUNG DU LIEU MAU ====================
@@ -883,7 +971,7 @@ GO
     cho FK MaTaiKhoan, bam ngau nhien vo hieu cho viec dang nhap. KHONG la auth.
   - CHI CHAY TREN MOI TRUONG TEST. KHONG chay tren du lieu san xuat.
 
- DO: Doi chieu ten cot va khoa ngoai tu file SQL goc 57 bang, ngay 16/11/2026.
+ DO: Doi chieu ten cot va khoa ngoai tu file SQL goc, them bang PhongHoc.
  CHUA: Khong co SQL Server truc tiep trong moi truong tao script de chay E2E.
 =========================================================================== */
 USE [VINABACUS];
@@ -898,14 +986,20 @@ BEGIN TRY
        OR OBJECT_ID(N'dbo.TaiKhoanCoSo',N'U') IS NULL
        OR OBJECT_ID(N'dbo.ChiTietTienAnMamNon',N'U') IS NULL
        OR OBJECT_ID(N'dbo.ChiTietPhieuKho',N'U') IS NULL
-        THROW 57001, N'Chua cai day du cau truc 57 bang VINABACUS. Hay cai SQL goc truoc.', 1;
+       OR OBJECT_ID(N'dbo.PhongHoc',N'U') IS NULL
+       OR COL_LENGTH(N'dbo.LichHocLop',N'MaPhong') IS NULL
+        THROW 57001, N'Chua cai day du cau truc 58 bang VINABACUS. Hay cai SQL goc truoc.', 1;
 
     DECLARE @TT INT=(SELECT MaCoSo FROM dbo.CoSo WHERE LoaiCoSo='TRUNG_TAM');
     DECLARE @MN INT=(SELECT MaCoSo FROM dbo.CoSo WHERE LoaiCoSo='MAM_NON');
+    DECLARE @P1 INT=(SELECT MaPhong FROM dbo.PhongHoc WHERE MaCoSo=@TT AND TenPhong=N'CS1 - Phòng 1');
+    DECLARE @P2 INT=(SELECT MaPhong FROM dbo.PhongHoc WHERE MaCoSo=@TT AND TenPhong=N'CS1 - Phòng 2');
     DECLARE @VaiTroDemo INT=(SELECT MaVaiTro FROM dbo.VaiTro WHERE MaVaiTroChu='GIAO_VIEN');
     DECLARE @Tag NVARCHAR(100)=N'[TEST VINABACUS 2026]';
     IF @TT IS NULL OR @MN IS NULL OR @VaiTroDemo IS NULL
         THROW 57002, N'Thieu CoSo TRUNG_TAM, MAM_NON hoac VaiTro GIAO_VIEN tu SQL goc.', 1;
+    IF @P1 IS NULL OR @P2 IS NULL
+        THROW 57028, N'Thieu phong mau. Hay chay migration PhongHoc truoc.', 1;
 
     /* --------------------------------------------------------------------
        A. NHAN VIEN + LIEN KET CO SO + 2 TAI KHOAN KY THUAT
@@ -1050,14 +1144,14 @@ BEGIN TRY
     ) v(MaKhoaHoc,TenLop,MaGiaoVien,NgayKG)
     WHERE NOT EXISTS (SELECT 1 FROM dbo.LopTrungTam l WHERE l.MaCoSo=@TT AND l.TenLop=v.TenLop);
 
-    INSERT dbo.LichHocLop(MaLop,ThuTrongTuan,GioBatDau,GioKetThuc,TuNgay)
-    SELECT l.MaLop,v.Thu,CONVERT(TIME(0),v.BatDau),CONVERT(TIME(0),v.KetThuc),CONVERT(DATE,v.TuNgay,112)
+    INSERT dbo.LichHocLop(MaLop,MaPhong,ThuTrongTuan,GioBatDau,GioKetThuc,TuNgay)
+    SELECT l.MaLop,v.MaPhong,v.Thu,CONVERT(TIME(0),v.BatDau),CONVERT(TIME(0),v.KetThuc),CONVERT(DATE,v.TuNgay,112)
     FROM (VALUES
-       (N'[TEST] Lớp Toán tư duy B',3,'17:30','19:00','20261103'),
-       (N'[TEST] Lớp Toán tư duy B',5,'17:30','19:00','20261103'),
-       (N'[TEST] Lớp Tiếng Anh B',4,'17:00','18:30','20261102'),
-       (N'[TEST] Lớp Tiếng Anh B',7,'08:00','09:30','20261102')
-    ) v(TenLop,Thu,BatDau,KetThuc,TuNgay)
+       (@P1,N'[TEST] Lớp Toán tư duy B',3,'17:30','19:00','20261103'),
+       (@P2,N'[TEST] Lớp Toán tư duy B',5,'17:30','19:00','20261103'),
+       (@P1,N'[TEST] Lớp Tiếng Anh B',4,'17:00','18:30','20261102'),
+       (@P2,N'[TEST] Lớp Tiếng Anh B',7,'08:00','09:30','20261102')
+    ) v(MaPhong,TenLop,Thu,BatDau,KetThuc,TuNgay)
     JOIN dbo.LopTrungTam l ON l.MaCoSo=@TT AND l.TenLop=v.TenLop
     WHERE NOT EXISTS (SELECT 1 FROM dbo.LichHocLop lich
                       WHERE lich.MaLop=l.MaLop AND lich.ThuTrongTuan=v.Thu
@@ -1562,5 +1656,7 @@ BEGIN CATCH
     PRINT N'DA ROLLBACK: '+@Msg;
     THROW;
 END CATCH;
+GO
+SET NOEXEC OFF;
 GO
 

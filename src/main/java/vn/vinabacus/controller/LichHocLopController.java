@@ -10,6 +10,7 @@ import vn.vinabacus.model.KhoaHoc;
 import vn.vinabacus.model.LichHocLop;
 import vn.vinabacus.model.LopTrungTam;
 import vn.vinabacus.model.MonHoc;
+import vn.vinabacus.model.PhongHoc;
 import vn.vinabacus.service.LichHocLopService;
 
 public final class LichHocLopController {
@@ -18,6 +19,7 @@ public final class LichHocLopController {
     public List<MonHoc> layMonHoc() throws SQLException { return service.layMonHoc(); }
     public List<KhoaHoc> layKhoaHoc() throws SQLException { return service.layKhoaHoc(); }
     public List<LopTrungTam> layLop() throws SQLException { return service.layLop(); }
+    public List<PhongHoc> layPhongHoc() throws SQLException { return service.layPhongHoc(); }
     public List<LichHocLop> timKiem(String tuKhoa, String trangThai) throws SQLException {
         return service.timKiem(tuKhoa, trangThai);
     }
