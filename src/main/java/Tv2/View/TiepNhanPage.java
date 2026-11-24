@@ -1,0 +1,7 @@
+package Tv2.View;
+import MainPage.View.Workspace;import javax.swing.*;import java.awt.Component;
+/** Form tiếp nhận: chỉ dựng trường nhập và trả dữ liệu. */
+public class TiepNhanPage {
+ public record Input(String name,String birth,String gender,String parent,String phone,String email,String address,String note,int course,String desired,boolean next){}
+ public static Input show(Component owner,Workspace.Choice[] courses,boolean direct){JTextField name=new JTextField(24),birth=new JTextField(),parent=new JTextField(),phone=new JTextField(),email=new JTextField(),address=new JTextField(),note=new JTextField(26),desired=new JTextField(26);JComboBox<String> gender=new JComboBox<>(new String[]{"","NAM","NU","KHAC"});JComboBox<Workspace.Choice> course=new JComboBox<>(courses);int a=Workspace.form(owner,direct?"Thêm học viên":"Tiếp nhận",new String[]{"Họ tên","Ngày sinh (yyyy-MM-dd, có thể trống)","Giới tính","Phụ huynh","SĐT","Email","Địa chỉ","Khóa mong muốn","Thời gian mong muốn","Ghi chú"},new JComponent[]{name,birth,gender,parent,phone,email,address,course,desired,note},"Lưu",direct?"Lưu và xếp lớp":"Lưu và học thử","Hủy");if(a<0||a>1)return null;return new Input(name.getText(),birth.getText(),(String)gender.getSelectedItem(),parent.getText(),phone.getText(),email.getText(),address.getText(),note.getText(),course.getSelectedItem()==null?0:((Workspace.Choice)course.getSelectedItem()).id(),desired.getText(),a==1);}
+}

@@ -1,0 +1,22 @@
+#VINABACUS - CAU HINH MENU VA DIEU HUONG
+#Tue Nov 24 12:54:25 GMT+07:00 2026
+BAO_CAO=Tv6.View.BaoCaoPage
+CHI_THU=Tv5.View.ChiThuPage
+CHUONG_TRINH=Tv6.View.ChuongTrinhPage
+DIEM_DANH=Tv4.View.DiemDanhPage
+HE_THONG=Tv1.View.HeThongPage
+HOC_VIEN=Tv2.View.HocVienPage
+KHO=Tv5.View.KhoPage
+KHOA_HOC=Tv3.View.KhoaHocPage
+LOP_HOC=Tv3.View.LopHocPage
+NHAN_SU=Tv1.View.NhanSuPage
+THOI_KHOA_BIEU=Tv4.View.ThoiKhoaBieuPage
+TRANG_CHU=MainPage.View.TrangChuPage
+TUYEN_SINH=Tv2.View.TuyenSinhPage
+
+#CACHE BADGE
+#badge.<MaCoSo>.<MenuKey>.<Nguon>=SoLuong
+#Khong co key / gia tri 0 = khong hien thi
+#Tue Nov 24 12:54:25 GMT+07:00 2026
+badge.1.TUYEN_SINH.HoSoCanXuLy=2
+badge.2.TUYEN_SINH.HoSoCanXuLy=1
