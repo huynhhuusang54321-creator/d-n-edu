@@ -22,7 +22,10 @@ public final class MainFrame extends JFrame {
         super("VINABACUS - Quản lý giáo dục");
         this.controller = Objects.requireNonNull(controller);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(1360, 850);
+        Rectangle vungLamViec = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getMaximumWindowBounds();
+        setSize(Math.min(1360, vungLamViec.width),
+                Math.min(850, vungLamViec.height));
         setMinimumSize(new Dimension(980, 630));
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());

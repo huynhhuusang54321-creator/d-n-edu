@@ -7,15 +7,21 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import vn.vinabacus.model.CoSo;
+import vn.vinabacus.model.DangKyKhoaHoc;
 import vn.vinabacus.model.KhoaHoc;
+import vn.vinabacus.model.LopTrungTam;
 import vn.vinabacus.model.MonHoc;
 import vn.vinabacus.repository.KhoaHocRepository;
+import vn.vinabacus.repository.DangKyKhoaHocRepository;
+import vn.vinabacus.repository.LopTrungTamRepository;
 import vn.vinabacus.repository.MonHocRepository;
 
 public final class KhoaHocService {
     private final CoSo coSo;
     private final KhoaHocRepository repo = new KhoaHocRepository();
     private final MonHocRepository monRepo = new MonHocRepository();
+    private final LopTrungTamRepository lopRepo = new LopTrungTamRepository();
+    private final DangKyKhoaHocRepository dangKyRepo = new DangKyKhoaHocRepository();
 
     public KhoaHocService(CoSo coSo) {
         if (coSo != CoSo.TRUNG_TAM) {
@@ -41,6 +47,18 @@ public final class KhoaHocService {
 
     public List<MonHoc> layMonHoc() throws SQLException {
         return monRepo.layDanhSach(maCoSo());
+    }
+
+    public List<LopTrungTam> layLopHoc() throws SQLException {
+        return lopRepo.layDanhSach(maCoSo());
+    }
+
+    public List<DangKyKhoaHoc> dangKyCuaKhoa(int maKhoaHoc) throws SQLException {
+        List<DangKyKhoaHoc> ketQua = new ArrayList<>();
+        for (DangKyKhoaHoc d : dangKyRepo.layDanhSach(maCoSo())) {
+            if (d.maKhoaHoc() == maKhoaHoc) ketQua.add(d);
+        }
+        return ketQua;
     }
 
     public int them(int maMonHoc, String ten, int soBuoi, BigDecimal hocPhi,

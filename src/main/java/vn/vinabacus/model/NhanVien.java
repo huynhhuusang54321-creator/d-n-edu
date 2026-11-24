@@ -13,12 +13,15 @@ public class NhanVien {
     private final String email;
     private final boolean trangThai;
     private final boolean trangThaiTaiCoSo;
+    /** Vai tro dang nhap tai co so, khong phai chung nhan chuyen mon giang day. */
+    private final String vaiTroTaiKhoan;
 
     public NhanVien(int maNhanVien, String hoTen,
                     LocalDate ngaySinh, String gioiTinh,
                     String soDienThoai, String email,
                     boolean trangThai,
-                    boolean trangThaiTaiCoSo) {
+                    boolean trangThaiTaiCoSo,
+                    String vaiTroTaiKhoan) {
 
         this.maNhanVien = maNhanVien;
         this.hoTen = hoTen;
@@ -28,6 +31,7 @@ public class NhanVien {
         this.email = email;
         this.trangThai = trangThai;
         this.trangThaiTaiCoSo = trangThaiTaiCoSo;
+        this.vaiTroTaiKhoan = vaiTroTaiKhoan;
     }
 
     public int getMaNhanVien() {
@@ -60,5 +64,9 @@ public class NhanVien {
 
     public boolean isTrangThaiTaiCoSo() {
         return trangThaiTaiCoSo;
+    }
+
+    public String getVaiTroTaiKhoan() {
+        return vaiTroTaiKhoan;
     }
 }

@@ -8,7 +8,11 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import vn.vinabacus.config.Database;
 import vn.vinabacus.model.CoSo;
@@ -16,6 +20,12 @@ import vn.vinabacus.model.TaiChinhDTO.*;
 
 /** JDBC TV5: mọi truy vấn và phiếu thu đều kiểm tra MaCoSo. Không đặt mật khẩu trong mã. */
 public final class TaiChinhRepository {
+    @FunctionalInterface public interface KetNoi { Connection mo() throws SQLException; }
+    private final KetNoi ketNoi;
+    public TaiChinhRepository() { this(Database::moKetNoi); }
+    public TaiChinhRepository(KetNoi ketNoi) {
+        this.ketNoi=java.util.Objects.requireNonNull(ketNoi);
+    }
     private int idCoSo(Connection c, CoSo coSo) throws SQLException {
         try (PreparedStatement s=c.prepareStatement("SELECT MaCoSo FROM dbo.CoSo WHERE LoaiCoSo=? AND TrangThai=1")) {
             s.setString(1,coSo.name());
@@ -35,6 +45,11 @@ public final class TaiChinhRepository {
             .withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
         return Timestamp.valueOf(utc);
     }
+    private static Timestamp dauNgayUtc(LocalDate day) {
+        LocalDateTime utc=day.atStartOfDay(GIO_VIET_NAM)
+            .withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
+        return Timestamp.valueOf(utc);
+    }
     private static LocalDateTime gioVietNam(Timestamp utc) {
         return utc.toLocalDateTime().atZone(ZoneOffset.UTC)
             .withZoneSameInstant(GIO_VIET_NAM).toLocalDateTime();
@@ -42,7 +57,7 @@ public final class TaiChinhRepository {
 
     /** Tổng phân bổ được xác nhận trừ các bút toán hoàn tác phân bổ; chưa bao gồm tín dụng/bù trừ khác. */
     private static final String SQL_KHOAN = """
-        SELECT k.MaKhoanThu,k.MaHocVien,h.HoTen,k.LoaiKhoan,k.MaDangKy,k.MaBangTinh,
+        SELECT k.MaKhoanThu,k.MaHocVien,h.HoTen,h.SoDienThoaiLienHe,k.LoaiKhoan,k.MaDangKy,k.MaBangTinh,
                k.SoTienGoc,k.HanThanhToan,k.TrangThai,
                COALESCE(dc.SoTien,0) AS DieuChinh,COALESCE(pt.SoTien,0) AS DaThu
         FROM dbo.KhoanPhaiThu k
@@ -61,7 +76,7 @@ public final class TaiChinhRepository {
         """;
 
     public List<KhoanThu> khoanThu(CoSo coSo) throws SQLException {
-        try(Connection c=Database.moKetNoi()) { return khoanThu(c,idCoSo(c,coSo)); }
+        try(Connection c=ketNoi.mo()) { return khoanThu(c,idCoSo(c,coSo)); }
     }
     private List<KhoanThu> khoanThu(Connection c,int maCoSo) throws SQLException {
         List<KhoanThu> result=new ArrayList<>();
@@ -73,7 +88,8 @@ public final class TaiChinhRepository {
                     result.add(new KhoanThu(r.getInt("MaKhoanThu"),r.getInt("MaHocVien"),
                         r.getString("HoTen"),r.getString("LoaiKhoan"),so(r,"SoTienGoc"),
                         so(r,"DieuChinh"),so(r,"DaThu"),han==null?null:han.toLocalDate(),r.getString("TrangThai"),
-                        (Integer)r.getObject("MaDangKy"),(Integer)r.getObject("MaBangTinh")));
+                        (Integer)r.getObject("MaDangKy"),(Integer)r.getObject("MaBangTinh"),
+                        r.getString("SoDienThoaiLienHe")));
                 }
             }
         }
@@ -81,25 +97,245 @@ public final class TaiChinhRepository {
     }
 
     public List<PhieuThu> phieuThu(CoSo coSo, YearMonth thang) throws SQLException {
+        return phieuThu(coSo,thang.atDay(1),thang.plusMonths(1).atDay(1));
+    }
+    /** Khoảng ngày địa phương Việt Nam: từ ngày đầu, trước ngày kết thúc. */
+    public List<PhieuThu> phieuThu(CoSo coSo,LocalDate tuNgay,LocalDate denTruoc) throws SQLException {
+        if(tuNgay==null||denTruoc==null||!tuNgay.isBefore(denTruoc))
+            throw new IllegalArgumentException("Khoảng ngày thu không hợp lệ.");
         String sql="""
             SELECT p.MaPhieuThu,p.SoPhieuThu,h.HoTen,p.TongTien,p.NgayThu,
-                   p.HinhThucThanhToan,p.TrangThai
+                   p.HinhThucThanhToan,p.TrangThai,p.GhiChu,p.NgayHuy,p.LyDoHuy,
+                   COALESCE(t.TenDangNhap,CONCAT('#',p.MaTaiKhoan)) AS TaiKhoanThu
             FROM dbo.PhieuThu p JOIN dbo.HocVien h
               ON h.MaHocVien=p.MaHocVien AND h.MaCoSo=p.MaCoSo
+            LEFT JOIN dbo.TaiKhoan t ON t.MaTaiKhoan=p.MaTaiKhoan
             WHERE p.MaCoSo=? AND p.NgayThu>=? AND p.NgayThu<?
             ORDER BY p.NgayThu DESC,p.MaPhieuThu DESC
             """;
-        try(Connection c=Database.moKetNoi();PreparedStatement s=c.prepareStatement(sql)) {
-            s.setInt(1,idCoSo(c,coSo));s.setTimestamp(2,dauThangUtc(thang));
-            s.setTimestamp(3,dauThangUtc(thang.plusMonths(1)));
+        try(Connection c=ketNoi.mo()) {
+            int maCoSo=idCoSo(c,coSo);
+            Timestamp tu=dauNgayUtc(tuNgay);
+            Timestamp den=dauNgayUtc(denTruoc);
+            Map<Integer,List<String>> noiDung=noiDungPhieuThu(c,maCoSo,tu,den);
             List<PhieuThu> result=new ArrayList<>();
-            try(ResultSet r=s.executeQuery()) {
-                while(r.next())result.add(new PhieuThu(r.getInt("MaPhieuThu"),r.getString("SoPhieuThu"),
-                    r.getString("HoTen"),so(r,"TongTien"),gioVietNam(r.getTimestamp("NgayThu")),
-                    r.getString("HinhThucThanhToan"),r.getString("TrangThai")));
+            try(PreparedStatement s=c.prepareStatement(sql)) {
+                s.setInt(1,maCoSo);s.setTimestamp(2,tu);s.setTimestamp(3,den);
+                try(ResultSet r=s.executeQuery()) {
+                    while(r.next()){
+                        int maPhieu=r.getInt("MaPhieuThu");
+                        result.add(new PhieuThu(maPhieu,r.getString("SoPhieuThu"),
+                            r.getString("HoTen"),so(r,"TongTien"),gioVietNam(r.getTimestamp("NgayThu")),
+                            r.getString("HinhThucThanhToan"),r.getString("TrangThai"),
+                            r.getString("TaiKhoanThu"),
+                            String.join("; ",noiDung.getOrDefault(maPhieu,List.of())),
+                            r.getString("GhiChu"),r.getTimestamp("NgayHuy")==null?null:
+                                gioVietNam(r.getTimestamp("NgayHuy")),r.getString("LyDoHuy")));
+                    }
+                }
             }
             return result;
         }
+    }
+
+    /** Đọc đúng số tiền từng khoản từ chi tiết phiếu, không suy diễn theo tổng phiếu. */
+    public List<PhanBoPhieu> phanBoPhieu(CoSo coSo,int maPhieu) throws SQLException {
+        try(Connection c=ketNoi.mo()) {
+            int maCoSo=idCoSo(c,coSo);
+            List<PhanBoPhieu> result=new ArrayList<>();
+            try(PreparedStatement s=c.prepareStatement("""
+                SELECT ct.MaKhoanThu,ct.SoTienPhanBo,ct.LoaiBienDong,
+                       k.LoaiKhoan,kh.TenKhoaHoc
+                FROM dbo.PhieuThu p
+                JOIN dbo.ChiTietPhieuThu ct ON ct.MaPhieuThu=p.MaPhieuThu AND ct.MaCoSo=p.MaCoSo
+                JOIN dbo.KhoanPhaiThu k ON k.MaKhoanThu=ct.MaKhoanThu AND k.MaCoSo=ct.MaCoSo
+                LEFT JOIN dbo.DangKyKhoaHoc d ON d.MaDangKy=k.MaDangKy AND d.MaCoSo=k.MaCoSo
+                LEFT JOIN dbo.KhoaHoc kh ON kh.MaKhoaHoc=d.MaKhoaHoc AND kh.MaCoSo=d.MaCoSo
+                WHERE p.MaPhieuThu=? AND p.MaCoSo=?
+                ORDER BY ct.MaChiTietPhieuThu
+                """)) {
+                s.setInt(1,maPhieu);s.setInt(2,maCoSo);
+                try(ResultSet r=s.executeQuery()) {while(r.next()) {
+                    String noiDung="HOC_PHI_KHOA".equals(r.getString("LoaiKhoan"))
+                        ?"Học phí khóa "+(r.getString("TenKhoaHoc")==null
+                            ?"#"+r.getInt("MaKhoanThu"):r.getString("TenKhoaHoc"))
+                        :"Khoản #"+r.getInt("MaKhoanThu")+" ("+r.getString("LoaiKhoan")+")";
+                    result.add(new PhanBoPhieu(r.getInt("MaKhoanThu"),noiDung,
+                        r.getBigDecimal("SoTienPhanBo"),r.getString("LoaiBienDong")));
+                }}
+            }
+            return result;
+        }
+    }
+
+    /** Lịch sử phân bổ theo từng khóa của học viên, gồm cả phiếu đã hủy để đối soát. */
+    public List<LichSuThu> lichSuThuHocVien(CoSo coSo,int maHocVien) throws SQLException {
+        try(Connection c=ketNoi.mo();PreparedStatement s=c.prepareStatement("""
+            SELECT p.MaPhieuThu,p.SoPhieuThu,p.NgayThu,p.TrangThai,
+                   kh.TenKhoaHoc,kt.MaKhoanThu,ct.SoTienPhanBo,ct.LoaiBienDong
+            FROM dbo.PhieuThu p
+            JOIN dbo.ChiTietPhieuThu ct ON ct.MaPhieuThu=p.MaPhieuThu AND ct.MaCoSo=p.MaCoSo
+            JOIN dbo.KhoanPhaiThu kt ON kt.MaKhoanThu=ct.MaKhoanThu AND kt.MaCoSo=ct.MaCoSo
+            LEFT JOIN dbo.DangKyKhoaHoc dk ON dk.MaDangKy=kt.MaDangKy AND dk.MaCoSo=kt.MaCoSo
+            LEFT JOIN dbo.KhoaHoc kh ON kh.MaKhoaHoc=dk.MaKhoaHoc AND kh.MaCoSo=dk.MaCoSo
+            WHERE p.MaCoSo=? AND p.MaHocVien=?
+            ORDER BY p.NgayThu DESC,p.MaPhieuThu DESC,ct.MaChiTietPhieuThu
+            """)) {
+            s.setInt(1,idCoSo(c,coSo));s.setInt(2,maHocVien);
+            List<LichSuThu> result=new ArrayList<>();
+            try(ResultSet r=s.executeQuery()){while(r.next()){
+                BigDecimal amount=r.getBigDecimal("SoTienPhanBo");
+                if("HOAN_TAC_PHAN_BO".equals(r.getString("LoaiBienDong")))amount=amount.negate();
+                String khoa=r.getString("TenKhoaHoc");
+                result.add(new LichSuThu(r.getInt("MaPhieuThu"),r.getString("SoPhieuThu"),
+                    gioVietNam(r.getTimestamp("NgayThu")),
+                    khoa==null?"Khoản #"+r.getInt("MaKhoanThu"):khoa,
+                    amount,r.getString("TrangThai")));
+            }}
+            return result;
+        }
+    }
+    public List<UuDaiDangKy> uuDaiHocVien(int maHocVien) throws SQLException {
+        try(Connection c=ketNoi.mo();PreparedStatement s=c.prepareStatement("""
+            SELECT ct.MaDangKy,ct.TenChuongTrinhSnapshot,ct.SoTienGiam
+            FROM dbo.ChiTietGiamGiaDangKy ct
+            JOIN dbo.DangKyKhoaHoc d ON d.MaDangKy=ct.MaDangKy AND d.MaCoSo=ct.MaCoSo
+            WHERE d.MaHocVien=? AND d.MaCoSo=?
+            ORDER BY ct.MaDangKy,ct.ThuTuApDung
+            """)) {
+            s.setInt(1,maHocVien);s.setInt(2,idCoSo(c,CoSo.TRUNG_TAM));
+            List<UuDaiDangKy> result=new ArrayList<>();
+            try(ResultSet r=s.executeQuery()){while(r.next())result.add(new UuDaiDangKy(
+                r.getInt(1),r.getString(2),r.getBigDecimal(3)));}
+            return result;
+        }
+    }
+
+    /** Phân bổ đã xác nhận trong kỳ, một dòng cho mỗi khoản của phiếu. */
+    public List<DongThuBaoCao> baoCaoThu(CoSo coSo,LocalDate tuNgay,
+                                          LocalDate denTruoc)throws SQLException {
+        if(tuNgay==null||denTruoc==null||!tuNgay.isBefore(denTruoc))
+            throw new IllegalArgumentException("Khoảng báo cáo không hợp lệ.");
+        try(Connection c=ketNoi.mo();PreparedStatement s=c.prepareStatement("""
+            SELECT p.NgayThu,ct.SoTienPhanBo,ct.LoaiBienDong,
+                   kt.LoaiKhoan,kh.TenKhoaHoc,
+                   COALESCE(t.TenDangNhap,CONCAT('#',p.MaTaiKhoan)) AS NhanVien
+            FROM dbo.PhieuThu p
+            JOIN dbo.ChiTietPhieuThu ct ON ct.MaPhieuThu=p.MaPhieuThu AND ct.MaCoSo=p.MaCoSo
+            JOIN dbo.KhoanPhaiThu kt ON kt.MaKhoanThu=ct.MaKhoanThu AND kt.MaCoSo=ct.MaCoSo
+            LEFT JOIN dbo.DangKyKhoaHoc d ON d.MaDangKy=kt.MaDangKy AND d.MaCoSo=kt.MaCoSo
+            LEFT JOIN dbo.KhoaHoc kh ON kh.MaKhoaHoc=d.MaKhoaHoc AND kh.MaCoSo=d.MaCoSo
+            LEFT JOIN dbo.TaiKhoan t ON t.MaTaiKhoan=p.MaTaiKhoan
+            WHERE p.MaCoSo=? AND p.TrangThai='XAC_NHAN'
+              AND p.NgayThu>=? AND p.NgayThu<?
+            ORDER BY p.NgayThu,ct.MaChiTietPhieuThu
+            """)) {
+            s.setInt(1,idCoSo(c,coSo));s.setTimestamp(2,dauNgayUtc(tuNgay));
+            s.setTimestamp(3,dauNgayUtc(denTruoc));
+            List<DongThuBaoCao> result=new ArrayList<>();
+            try(ResultSet r=s.executeQuery()){while(r.next()){
+                BigDecimal amount=r.getBigDecimal("SoTienPhanBo");
+                if("HOAN_TAC_PHAN_BO".equals(r.getString("LoaiBienDong")))amount=amount.negate();
+                String khoa=r.getString("TenKhoaHoc");
+                if(khoa==null)khoa=r.getString("LoaiKhoan");
+                result.add(new DongThuBaoCao(gioVietNam(r.getTimestamp("NgayThu"))
+                    .toLocalDate(),khoa,r.getString("NhanVien"),amount));
+            }}
+            return result;
+        }
+    }
+
+    /** Thu nhiều khóa trong cùng một phiếu; mọi phân bổ dùng chung một transaction. */
+    public int lapPhieuNhieuKhoan(CoSo coSo,int maHocVien,BigDecimal soTien,
+            List<TaiChinhDangKyRepository.PhanBo> phanBo,String hinhThuc,
+            int taiKhoan,String ghiChu,UUID token) throws SQLException {
+        if(coSo!=CoSo.TRUNG_TAM)throw new IllegalArgumentException("Chỉ hỗ trợ thu nhiều khóa Trung tâm.");
+        try(Connection c=ketNoi.mo()) {
+            int[] maPhieu=new int[1];
+            giaoDich(c,()-> maPhieu[0]=new TaiChinhDangKyRepository().lapPhieu(c,
+                idCoSo(c,coSo),maHocVien,soTien,phanBo,hinhThuc,taiKhoan,ghiChu,token));
+            return maPhieu[0];
+        }
+    }
+
+    /** Hủy mềm phiếu chưa có bút toán hoàn tác phụ thuộc; công nợ sẽ tự tính lại. */
+    public void huyPhieu(CoSo coSo,int maPhieu,int taiKhoan,String lyDo) throws SQLException {
+        if(lyDo==null||lyDo.isBlank()||lyDo.trim().length()>500)
+            throw new IllegalArgumentException("Cần lý do hủy phiếu từ 1 đến 500 ký tự.");
+        try(Connection c=ketNoi.mo()) {giaoDich(c,()->{
+            int maCoSo=idCoSo(c,coSo);kiemTraTaiKhoan(c,maCoSo,taiKhoan);
+            try(PreparedStatement s=c.prepareStatement("""
+                SELECT TrangThai FROM dbo.PhieuThu WITH (UPDLOCK,HOLDLOCK)
+                WHERE MaPhieuThu=? AND MaCoSo=?
+                """)) {
+                s.setInt(1,maPhieu);s.setInt(2,maCoSo);
+                try(ResultSet r=s.executeQuery()) {
+                    if(!r.next()||!"XAC_NHAN".equals(r.getString(1)))
+                        throw new SQLException("Phiếu không tồn tại, đã hủy hoặc chưa xác nhận.");
+                }
+            }
+            try(PreparedStatement s=c.prepareStatement("""
+                SELECT COUNT(*) FROM dbo.ChiTietPhieuThu ct
+                WHERE ct.MaPhieuThu=? AND ct.MaCoSo=? AND (
+                    ct.LoaiBienDong<>'PHAN_BO' OR EXISTS(
+                        SELECT 1 FROM dbo.ChiTietPhieuThu h
+                        WHERE h.MaChiTietNguon=ct.MaChiTietPhieuThu))
+                """)) {
+                s.setInt(1,maPhieu);s.setInt(2,maCoSo);
+                try(ResultSet r=s.executeQuery()) {r.next();if(r.getInt(1)>0)
+                    throw new SQLException("Phiếu có bút toán hoàn tác/phụ thuộc; cần đối soát trước khi hủy.");}
+            }
+            try(PreparedStatement s=c.prepareStatement("""
+                UPDATE dbo.PhieuThu SET TrangThai='HUY',NgayHuy=SYSUTCDATETIME(),
+                    MaTaiKhoanHuy=?,LyDoHuy=? WHERE MaPhieuThu=? AND MaCoSo=?
+                    AND TrangThai='XAC_NHAN'
+                """)) {
+                s.setInt(1,taiKhoan);s.setString(2,lyDo.trim());
+                s.setInt(3,maPhieu);s.setInt(4,maCoSo);
+                if(s.executeUpdate()!=1)throw new SQLException("Không hủy được phiếu.");
+            }
+        });}
+    }
+
+    /** Nội dung lấy từ các khoản thực sự được phân bổ, không suy diễn từ ghi chú. */
+    private static Map<Integer,List<String>> noiDungPhieuThu(Connection c,int maCoSo,
+            Timestamp tuNgay,Timestamp denNgay) throws SQLException {
+        String sql="""
+            SELECT p.MaPhieuThu,ct.MaKhoanThu,ct.LoaiBienDong,
+                   kt.LoaiKhoan,k.TenKhoaHoc
+            FROM dbo.PhieuThu p
+            JOIN dbo.ChiTietPhieuThu ct ON ct.MaPhieuThu=p.MaPhieuThu
+              AND ct.MaCoSo=p.MaCoSo
+            JOIN dbo.KhoanPhaiThu kt ON kt.MaKhoanThu=ct.MaKhoanThu
+              AND kt.MaCoSo=ct.MaCoSo
+            LEFT JOIN dbo.DangKyKhoaHoc d ON d.MaDangKy=kt.MaDangKy
+              AND d.MaCoSo=kt.MaCoSo
+            LEFT JOIN dbo.KhoaHoc k ON k.MaKhoaHoc=d.MaKhoaHoc
+              AND k.MaCoSo=d.MaCoSo
+            WHERE p.MaCoSo=? AND p.NgayThu>=? AND p.NgayThu<?
+            ORDER BY p.MaPhieuThu,ct.MaChiTietPhieuThu
+            """;
+        Map<Integer,List<String>> result=new HashMap<>();
+        try(PreparedStatement ps=c.prepareStatement(sql)) {
+            ps.setInt(1,maCoSo);ps.setTimestamp(2,tuNgay);ps.setTimestamp(3,denNgay);
+            try(ResultSet rs=ps.executeQuery()) {
+                while(rs.next()) {
+                    String ten=switch(rs.getString("LoaiKhoan")) {
+                        case "HOC_PHI_KHOA" -> "Học phí khóa "
+                            +(rs.getString("TenKhoaHoc")==null?"#"+rs.getInt("MaKhoanThu"):
+                                rs.getString("TenKhoaHoc"));
+                        case "HOC_PHI_THANG" -> "Học phí tháng, khoản #"+rs.getInt("MaKhoanThu");
+                        case "TIEN_AN" -> "Tiền ăn, khoản #"+rs.getInt("MaKhoanThu");
+                        default -> "Khoản #"+rs.getInt("MaKhoanThu");
+                    };
+                    if("HOAN_TAC_PHAN_BO".equals(rs.getString("LoaiBienDong")))
+                        ten="Hoàn tác " + ten.toLowerCase(java.util.Locale.forLanguageTag("vi-VN"));
+                    result.computeIfAbsent(rs.getInt("MaPhieuThu"),ignored->new ArrayList<>())
+                        .add(ten);
+                }
+            }
+        }
+        return result;
     }
 
     public List<LuaChon> taiKhoan(CoSo coSo) throws SQLException {
@@ -109,7 +345,7 @@ public final class TaiChinhRepository {
             WHERE tc.MaCoSo=? AND tc.TrangThai=1 AND t.TrangThai=1
             ORDER BY t.TenDangNhap
             """;
-        try(Connection c=Database.moKetNoi(); PreparedStatement s=c.prepareStatement(sql)){
+        try(Connection c=ketNoi.mo(); PreparedStatement s=c.prepareStatement(sql)){
             s.setInt(1,idCoSo(c,coSo));List<LuaChon> result=new ArrayList<>();
             try(ResultSet r=s.executeQuery()) {while(r.next()) result.add(new LuaChon(r.getInt(1),r.getString(2)));}
             return result;
@@ -123,7 +359,7 @@ public final class TaiChinhRepository {
             WHERE l.MaCoSo=? AND l.TrangThai=1
             ORDER BY n.TuNgay DESC,l.TenLop
             """;
-        try(Connection c=Database.moKetNoi();PreparedStatement s=c.prepareStatement(sql)) {
+        try(Connection c=ketNoi.mo();PreparedStatement s=c.prepareStatement(sql)) {
             s.setInt(1,idMamNon(c));List<LuaChon> result=new ArrayList<>();
             try(ResultSet r=s.executeQuery()){while(r.next())result.add(new LuaChon(r.getInt(1),r.getString(2)));}
             return result;
@@ -140,7 +376,7 @@ public final class TaiChinhRepository {
               AND NOT EXISTS(SELECT 1 FROM dbo.KhoanPhaiThu t WHERE t.MaDangKy=d.MaDangKy)
             ORDER BY d.MaDangKy DESC
             """;
-        try(Connection c=Database.moKetNoi();PreparedStatement s=c.prepareStatement(sql)) {
+        try(Connection c=ketNoi.mo();PreparedStatement s=c.prepareStatement(sql)) {
             s.setInt(1,idCoSo(c,CoSo.TRUNG_TAM));List<DangKyChuaThu> result=new ArrayList<>();
             try(ResultSet r=s.executeQuery()){
                 while(r.next())result.add(new DangKyChuaThu(r.getInt(1),r.getString(2),r.getString(3),
@@ -158,10 +394,12 @@ public final class TaiChinhRepository {
      */
     public List<HocPhiTrungTam> hocPhiTrungTam() throws SQLException {
         String sql="""
-            SELECT d.MaDangKy, h.HoTen AS HocVien, m.TenMonHoc, k.TenKhoaHoc,
+            SELECT d.MaDangKy,d.MaHocVien,h.HoTen AS HocVien,h.SoDienThoaiLienHe,
+                   m.TenMonHoc, k.TenKhoaHoc,
                    COALESCE(l.TenLop, N'Chưa xếp lớp') AS TenLop,
                    d.HocPhiThoaThuan, d.SoTienGiam, d.HocPhiSauGiam,
-                   COALESCE(paid.DaDong, 0) AS DaDong
+                   COALESCE(paid.DaDong, 0) AS DaDong,
+                   latest.SoPhieuGanNhat,latest.NgayThuGanNhat,latest.SoTienLanThu
             FROM dbo.DangKyKhoaHoc d
             JOIN dbo.HocVien h ON h.MaHocVien=d.MaHocVien AND h.MaCoSo=d.MaCoSo
             JOIN dbo.KhoaHoc k ON k.MaKhoaHoc=d.MaKhoaHoc AND k.MaCoSo=d.MaCoSo
@@ -185,10 +423,27 @@ public final class TaiChinhRepository {
                 WHERE t.MaDangKy=d.MaDangKy AND t.MaCoSo=d.MaCoSo
                   AND t.TrangThai='HIEU_LUC'
             ) paid
+            OUTER APPLY (
+                SELECT TOP (1) p.SoPhieuThu AS SoPhieuGanNhat,
+                       p.NgayThu AS NgayThuGanNhat,
+                       SUM(CASE WHEN ct.LoaiBienDong='PHAN_BO'
+                                THEN ct.SoTienPhanBo ELSE -ct.SoTienPhanBo END) AS SoTienLanThu
+                FROM dbo.KhoanPhaiThu t
+                JOIN dbo.ChiTietPhieuThu ct ON ct.MaKhoanThu=t.MaKhoanThu
+                  AND ct.MaCoSo=t.MaCoSo
+                JOIN dbo.PhieuThu p ON p.MaPhieuThu=ct.MaPhieuThu
+                  AND p.MaCoSo=ct.MaCoSo AND p.TrangThai='XAC_NHAN'
+                WHERE t.MaDangKy=d.MaDangKy AND t.MaCoSo=d.MaCoSo
+                  AND t.TrangThai='HIEU_LUC'
+                GROUP BY p.MaPhieuThu,p.SoPhieuThu,p.NgayThu
+                HAVING SUM(CASE WHEN ct.LoaiBienDong='PHAN_BO'
+                                THEN ct.SoTienPhanBo ELSE -ct.SoTienPhanBo END)>0
+                ORDER BY p.NgayThu DESC,p.MaPhieuThu DESC
+            ) latest
             WHERE d.MaCoSo=? AND d.TrangThai<>'HUY'
             ORDER BY d.MaDangKy DESC
             """;
-        try(Connection c=Database.moKetNoi();PreparedStatement s=c.prepareStatement(sql)) {
+        try(Connection c=ketNoi.mo();PreparedStatement s=c.prepareStatement(sql)) {
             s.setInt(1,idCoSo(c,CoSo.TRUNG_TAM));
             List<HocPhiTrungTam> result=new ArrayList<>();
             try(ResultSet r=s.executeQuery()) {
@@ -197,7 +452,11 @@ public final class TaiChinhRepository {
                     result.add(new HocPhiTrungTam(r.getInt("MaDangKy"),r.getString("HocVien"),
                         r.getString("TenMonHoc"),r.getString("TenKhoaHoc"),r.getString("TenLop"),
                         so(r,"HocPhiThoaThuan"),so(r,"SoTienGiam"),due,paid,
-                        due.subtract(paid).max(BigDecimal.ZERO)));
+                        due.subtract(paid),r.getString("SoPhieuGanNhat"),
+                        r.getTimestamp("NgayThuGanNhat")==null?null:
+                            gioVietNam(r.getTimestamp("NgayThuGanNhat")),
+                        r.getBigDecimal("SoTienLanThu"),r.getInt("MaHocVien"),
+                        r.getString("SoDienThoaiLienHe")));
                 }
             }
             return result;
@@ -214,7 +473,7 @@ public final class TaiChinhRepository {
             WHERE b.MaCoSo=? AND b.TrangThai='CHOT'
             ORDER BY t.Nam DESC,t.Thang DESC,b.MaBangTinh DESC
             """;
-        try(Connection c=Database.moKetNoi();PreparedStatement s=c.prepareStatement(sql)) {
+        try(Connection c=ketNoi.mo();PreparedStatement s=c.prepareStatement(sql)) {
             s.setInt(1,idMamNon(c));List<BangTinhChot> result=new ArrayList<>();
             try(ResultSet r=s.executeQuery()) {
                 while(r.next())result.add(new BangTinhChot(r.getInt(1),r.getString(2),r.getString(3),
@@ -237,7 +496,7 @@ public final class TaiChinhRepository {
             WHERE l.MaCoSo=?
             ORDER BY ApDung DESC,Lop
             """;
-        try(Connection c=Database.moKetNoi();PreparedStatement s=c.prepareStatement(sql)) {
+        try(Connection c=ketNoi.mo();PreparedStatement s=c.prepareStatement(sql)) {
             int id=idMamNon(c);s.setInt(1,id);s.setInt(2,id);
             List<MucPhi> result=new ArrayList<>();
             try(ResultSet r=s.executeQuery()) {
@@ -272,7 +531,7 @@ public final class TaiChinhRepository {
             FROM dbo.DangKyKhoaHoc d WITH (UPDLOCK,HOLDLOCK)
             WHERE d.MaDangKy=? AND d.TrangThai<>'HUY'
             """;
-        try(Connection c=Database.moKetNoi()) { giaoDich(c,()->{
+        try(Connection c=ketNoi.mo()) { giaoDich(c,()->{
             int coSo=idCoSo(c,CoSo.TRUNG_TAM),hocVien;BigDecimal money;
             try(PreparedStatement s=c.prepareStatement(select)) {
                 s.setInt(1,maDangKy);
@@ -302,7 +561,7 @@ public final class TaiChinhRepository {
         if(!hocPhi&&!tienAn)throw new IllegalArgumentException("Chọn ít nhất một loại khoản thu.");
         String sql="SELECT MaHocVien,MaCoSo,TongHocPhi,TongTienAn FROM dbo.BangTinhPhiMamNon WITH (UPDLOCK,HOLDLOCK) WHERE MaBangTinh=? AND TrangThai='CHOT'";
         int[] count={0};
-        try(Connection c=Database.moKetNoi()) { giaoDich(c,()->{
+        try(Connection c=ketNoi.mo()) { giaoDich(c,()->{
             int coSo=idMamNon(c),hocVien;BigDecimal hp,an;
             try(PreparedStatement s=c.prepareStatement(sql)) {
                 s.setInt(1,maBangTinh);
@@ -340,7 +599,7 @@ public final class TaiChinhRepository {
         String table=tienAn?"dbo.DonGiaTienAn":"dbo.MucHocPhiLop";
         String money=tienAn?"DonGiaNgay":"HocPhiThang";
         String select="SELECT MaCoSo FROM dbo.LopMamNon WHERE MaLop=? AND TrangThai=1";
-        try(Connection c=Database.moKetNoi()) { giaoDich(c,()->{
+        try(Connection c=ketNoi.mo()) { giaoDich(c,()->{
             int coSo=idMamNon(c);
             try(PreparedStatement s=c.prepareStatement(select)) {
                 s.setInt(1,maLop);try(ResultSet r=s.executeQuery()) {
@@ -379,7 +638,7 @@ public final class TaiChinhRepository {
         if(!List.of("TIEN_MAT","CHUYEN_KHOAN","KHAC").contains(method))
             throw new IllegalArgumentException("Hình thức thanh toán không hợp lệ.");
         if(note!=null&&note.length()>500)throw new IllegalArgumentException("Ghi chú quá 500 ký tự.");
-        try(Connection c=Database.moKetNoi()) { giaoDich(c,()->{
+        try(Connection c=ketNoi.mo()) { giaoDich(c,()->{
             int coSoId=idCoSo(c,coSo);kiemTraTaiKhoan(c,coSoId,taiKhoan);
             int hocVien;BigDecimal goc;
             try(PreparedStatement s=c.prepareStatement("""
@@ -444,7 +703,7 @@ public final class TaiChinhRepository {
             throw new IllegalArgumentException("Số tiền điều chỉnh phải khác 0 và không quá lớn.");
         if(lyDo==null||lyDo.isBlank()||lyDo.length()>500)
             throw new IllegalArgumentException("Lý do điều chỉnh phải có từ 1 đến 500 ký tự.");
-        try(Connection c=Database.moKetNoi()) { giaoDich(c,()->{
+        try(Connection c=ketNoi.mo()) { giaoDich(c,()->{
             int coSoId=idCoSo(c,coSo);kiemTraTaiKhoan(c,coSoId,taiKhoan);
             BigDecimal goc;
             try(PreparedStatement s=c.prepareStatement("""
@@ -495,25 +754,44 @@ public final class TaiChinhRepository {
     }
 
     public ThongKe thongKe(CoSo coSo,YearMonth thang) throws SQLException {
-        try(Connection c=Database.moKetNoi()) {
+        return thongKe(coSo,thang.atDay(1),thang.plusMonths(1).atDay(1));
+    }
+    public ThongKe thongKe(CoSo coSo,LocalDate tuNgay,LocalDate denTruoc) throws SQLException {
+        if(tuNgay==null||denTruoc==null||!tuNgay.isBefore(denTruoc))
+            throw new IllegalArgumentException("Khoảng báo cáo không hợp lệ.");
+        try(Connection c=ketNoi.mo()) {
             int id=idCoSo(c,coSo);
             BigDecimal thuThang=BigDecimal.ZERO,thuAll=BigDecimal.ZERO,phaiThu=BigDecimal.ZERO,no=BigDecimal.ZERO;
-            long noCount=0,paidCount=0;
+            long noCount=0,paidCount=0,receiptCount=0;
+            BigDecimal giamGia=BigDecimal.ZERO;
+            Set<Integer> hocVienNo=new HashSet<>();
             try(PreparedStatement s=c.prepareStatement("""
                 SELECT SUM(CASE WHEN NgayThu>=? AND NgayThu<? THEN TongTien ELSE 0 END) AS ThuThang,
-                       SUM(TongTien) AS ThuAll FROM dbo.PhieuThu
+                       SUM(TongTien) AS ThuAll,COUNT(*) AS SoPhieu FROM dbo.PhieuThu
                 WHERE MaCoSo=? AND TrangThai='XAC_NHAN'
                 """)){
-                s.setTimestamp(1,dauThangUtc(thang));
-                s.setTimestamp(2,dauThangUtc(thang.plusMonths(1)));s.setInt(3,id);
-                try(ResultSet r=s.executeQuery()) {if(r.next()){thuThang=so(r,"ThuThang");thuAll=so(r,"ThuAll");}}
+                s.setTimestamp(1,dauNgayUtc(tuNgay));
+                s.setTimestamp(2,dauNgayUtc(denTruoc));s.setInt(3,id);
+                try(ResultSet r=s.executeQuery()) {if(r.next()){
+                    thuThang=so(r,"ThuThang");thuAll=so(r,"ThuAll");
+                    receiptCount=r.getLong("SoPhieu");
+                }}
             }
             for(KhoanThu k:khoanThu(c,id)) {
                 if(!"HIEU_LUC".equals(k.trangThai()))continue;
                 phaiThu=phaiThu.add(k.phaiThu());no=no.add(k.conNo());
-                if(k.conNo().signum()>0)noCount++;else paidCount++;
+                if(k.conNo().signum()>0){noCount++;hocVienNo.add(k.maHocVien());}
+                else paidCount++;
             }
-            return new ThongKe(thuThang,thuAll,phaiThu,no,noCount,paidCount);
+            if(coSo==CoSo.TRUNG_TAM)try(PreparedStatement s=c.prepareStatement("""
+                SELECT COALESCE(SUM(SoTienGiam),0) FROM dbo.DangKyKhoaHoc
+                WHERE MaCoSo=? AND TrangThai<>'HUY'
+                """)) {
+                s.setInt(1,id);
+                try(ResultSet r=s.executeQuery()){r.next();giamGia=r.getBigDecimal(1);}
+            }
+            return new ThongKe(thuThang,thuAll,phaiThu,no,noCount,paidCount,
+                giamGia,hocVienNo.size(),receiptCount);
         }
     }
 }

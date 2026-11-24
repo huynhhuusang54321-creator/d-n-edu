@@ -14,5 +14,10 @@ public record LopTrungTam(
         Integer maGiaoVien,
         String tenGiaoVien,
         LocalDate ngayKhaiGiang,
-        String trangThai) {
+        String trangThai,
+        Integer siSoToiDa,
+        int siSoHienTai,
+        int siSoDaDat,
+        Integer sucChuaPhong,
+        String tenPhong) {
 }

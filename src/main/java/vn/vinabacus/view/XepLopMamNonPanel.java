@@ -12,6 +12,7 @@ import javax.swing.table.DefaultTableModel;
 import vn.vinabacus.controller.MamNonController;
 import vn.vinabacus.model.*;
 import vn.vinabacus.repository.MamNonRepository.DuKienChuyen;
+import vn.vinabacus.repository.MamNonRepository.LuaChon;
 import vn.vinabacus.tv4.NamHocMacDinh;
 
 /** Xem theo tab lớp, chuyển lớp và chuyển hàng loạt giữa các năm học. */
@@ -36,14 +37,14 @@ public final class XepLopMamNonPanel extends JPanel {
 
     public XepLopMamNonPanel(){
         super(new BorderLayout(10,6));setBorder(BorderFactory.createEmptyBorder(15,15,15,15));
-        JButton move=MamNonUi.nut("Chuyển lớp",true),finish=MamNonUi.nut("Ngừng học tại lớp",false);
+        JButton enroll=MamNonUi.nut("+ Xếp học sinh",true),move=MamNonUi.nut("Chuyển lớp",false),finish=MamNonUi.nut("Ngừng học tại lớp",false);
         JButton bulk=MamNonUi.nut("Chuyển sang năm học mới",false),reload=MamNonUi.nut("Làm mới",false);
-        MamNonUi.coCongCu(year,215);MamNonUi.coCongCu(move,125);
+        MamNonUi.coCongCu(year,215);MamNonUi.coCongCu(enroll,170);MamNonUi.coCongCu(move,125);
         MamNonUi.coCongCu(finish,195);MamNonUi.coCongCu(bulk,235);
         MamNonUi.coCongCu(reload,110);
         JPanel top=new JPanel(new BorderLayout(0,8));
         top.add(MamNonUi.tieuDe("XẾP LỚP HỌC SINH MẦM NON"),BorderLayout.NORTH);
-        top.add(MamNonUi.thanhCongCu(new JLabel("Năm học:"),year,move,finish,bulk,reload),BorderLayout.CENTER);
+        top.add(MamNonUi.thanhCongCu(new JLabel("Năm học:"),year,enroll,move,finish,bulk,reload),BorderLayout.CENTER);
         // Chỉ chiếm chiều cao của hàng tab (không còn vùng trắng ẩn của JTabbedPane).
         tabBar.setOpaque(false);
         tabScroll.setOpaque(false);
@@ -66,7 +67,7 @@ public final class XepLopMamNonPanel extends JPanel {
         add(top,BorderLayout.NORTH);add(new JScrollPane(table),BorderLayout.CENTER);add(status,BorderLayout.SOUTH);
         year.addActionListener(e->{if(!loading)reloadClasses();});
         reload.addActionListener(e->loadYears(false));
-        move.addActionListener(e->moveOne());finish.addActionListener(e->finish());bulk.addActionListener(e->bulk());
+        enroll.addActionListener(e->enroll());move.addActionListener(e->moveOne());finish.addActionListener(e->finish());bulk.addActionListener(e->bulk());
         SwingUtilities.invokeLater(()->loadYears(true));
     }
     @Override public void addNotify(){super.addNotify();NamHocMacDinh.langNghe(yearListener);}
@@ -172,6 +173,28 @@ public final class XepLopMamNonPanel extends JPanel {
         int i=table.getSelectedRow();if(i<0){JOptionPane.showMessageDialog(this,"Hãy chọn học sinh trong bảng.");return null;}
         return visible.get(table.convertRowIndexToModel(i));
     }
+    private void enroll(){
+        NamHocMamNon selectedYear=(NamHocMamNon)year.getSelectedItem();
+        if(selectedYear==null||classes.isEmpty()){JOptionPane.showMessageDialog(this,"Chọn năm học có lớp trước khi xếp học sinh.");return;}
+        List<LopMamNon> targets=classes.stream().filter(LopMamNon::trangThai).toList();
+        if(targets.isEmpty()){JOptionPane.showMessageDialog(this,"Năm học chưa có lớp đang hoạt động.");return;}
+        MamNonUi.tai(this,()->ctrl.hocSinh(""),students->{
+            if(students.isEmpty()){JOptionPane.showMessageDialog(this,"Chưa có hồ sơ học sinh Mầm non đang hoạt động.");return;}
+            JComboBox<LuaChon> hocSinh=new JComboBox<>(students.toArray(new LuaChon[0]));
+            JComboBox<LopMamNon> lop=new JComboBox<>(targets.toArray(new LopMamNon[0]));
+            if(currentClass()!=null)lop.setSelectedItem(currentClass());
+            MamNonNgayPicker start=new MamNonNgayPicker(selectedYear.tuNgay());
+            start.setDateRange(selectedYear.tuNgay(),selectedYear.denNgay());
+            JPanel form=MamNonUi.form("Học sinh (*)",hocSinh,"Lớp (*)",lop,"Ngày vào lớp (*)",start);
+            if(!MamNonUi.xacNhan(this,form,"Xếp học sinh vào lớp Mầm non",false))return;
+            LuaChon student=(LuaChon)hocSinh.getSelectedItem();LopMamNon target=(LopMamNon)lop.getSelectedItem();
+            if(student==null||target==null)return;
+            try{LocalDate day=start.getDate();
+                if(!MamNonUi.xacNhan(this,"Xếp "+student.ten()+" vào "+target.tenLop()+" từ ngày "+day+"?","Xác nhận xếp lớp",false))return;
+                MamNonUi.ghi(this,()->ctrl.xepHocSinh(target.maLop(),student.id(),day),this::loadRows);
+            }catch(Exception ex){MamNonUi.loi(this,ex);}
+        });
+    }
     private void moveOne(){
         XepLopMamNon x=selected();if(x==null)return;
         if(!isActive(x)){JOptionPane.showMessageDialog(this,"Chỉ được chuyển hồ sơ đang hiệu lực.");return;}
@@ -249,7 +272,7 @@ public final class XepLopMamNonPanel extends JPanel {
             if(!MamNonUi.xacNhan(this,form,"Chuyển học sinh sang năm học mới",false))return;
             LopMamNon dest=(LopMamNon)target.getSelectedItem();if(dest==null){JOptionPane.showMessageDialog(this,"Chưa có lớp đích đang hoạt động.");return;}
             try{LocalDate transfer=day.getDate();
-                MamNonUi.tai(this,()->ctrl.duKienChuyen(source.maLop(),dest.maLop()),preview->{
+                MamNonUi.tai(this,()->ctrl.duKienChuyen(source.maLop(),dest.maLop(),transfer),preview->{
                     DefaultTableModel dm=MamNonUi.model("Mã học sinh","Họ và tên","Kết quả dự kiến");
                     int allowed=0;for(DuKienChuyen p:preview){dm.addRow(new Object[]{p.maHocVien(),p.tenHocVien(),p.ketQua()});if("Dự kiến chuyển".equals(p.ketQua()))allowed++;}
                     JScrollPane grid=new JScrollPane(MamNonUi.bang(dm));grid.setPreferredSize(new Dimension(680,300));

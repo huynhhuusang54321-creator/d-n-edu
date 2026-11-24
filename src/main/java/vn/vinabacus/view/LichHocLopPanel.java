@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.Comparator;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.concurrent.ExecutionException;
 import javax.swing.BorderFactory;
@@ -60,8 +61,13 @@ import vn.vinabacus.model.KhoaHoc;
 import vn.vinabacus.model.LichHocLop;
 import vn.vinabacus.model.LopTrungTam;
 import vn.vinabacus.model.MonHoc;
+import vn.vinabacus.model.PhongHoc;
 import vn.vinabacus.service.LichHocLopService;
+import vn.vinabacus.service.CaHocTrungTam;
+import vn.vinabacus.service.DuKienKetThucLop;
 import vn.vinabacus.repository.LichHocLopRepository.BuoiTrongTuan;
+import vn.vinabacus.repository.LichHocLopRepository.BuoiCoPhong;
+import vn.vinabacus.repository.LichHocLopRepository.HocVienTheoLop;
 
 /** Lich hoc Trung tam: tab Tong va cac tab theo mon; loc khoa/lop; ma lich khong hien trong bang. */
 public final class LichHocLopPanel extends JPanel {
@@ -73,16 +79,21 @@ public final class LichHocLopPanel extends JPanel {
     });
     private final JTabbedPane tabMonHoc = new JTabbedPane();
     private final JLabel thongBao = new JLabel("Sẵn sàng");
-    private final JButton btnXoaLoc = new JButton("Xóa lọc");
+    private final JButton btnXoaLoc = new NutMau("Xóa lọc", NutMau.Kieu.PHU);
     // Chan su kien combo khi dua tat ca bo loc ve mac dinh, chi tai SQL mot lan.
     private boolean dangXoaLoc;
     private final List<TabTheoMon> cacTab = new ArrayList<>();
     private int lanTai;
     private final Map<Integer, Boolean> cheDoTungTab = new LinkedHashMap<>();
+    private List<PhongHoc> danhSachPhong = List.of();
+    private List<LichHocLop> tatCaLich = List.of();
     private LocalDate tuanCanXem = LocalDate.now();
 
     private record DuLieu(List<MonHoc> mon, List<KhoaHoc> khoa,
-                          List<LopTrungTam> lop, List<LichHocLop> lich) { }
+                          List<LopTrungTam> lop, List<LichHocLop> lich,
+                          List<LichHocLop> tatCa, List<PhongHoc> phong,
+                          List<HocVienTheoLop> hocVien,
+                          List<DuKienKetThucLop.BuoiDieuChinh> buoiDieuChinh) { }
     private record LuaChon(int ma, String ten) {
         @Override public String toString() { return ten; }
     }
@@ -96,40 +107,47 @@ public final class LichHocLopPanel extends JPanel {
         final int maMon;
         final JComboBox<LuaChon> locKhoa = new JComboBox<>();
         final JComboBox<LuaChon> locLop = new JComboBox<>();
+        final JComboBox<LuaChon> locGiaoVien = new JComboBox<>();
+        final JComboBox<LuaChon> locPhong = new JComboBox<>();
+        final JComboBox<LuaChon> locHocVien = new JComboBox<>();
         final DefaultTableModel model = new DefaultTableModel(new String[]{
-                "Tên lớp", "Khóa học", "Thứ", "Bắt đầu", "Kết thúc", "Từ ngày", "Đến ngày", "Trạng thái"
+                "Tên lớp", "Khóa học", "Giáo viên", "Phòng", "Thứ", "Bắt đầu", "Kết thúc", "Từ ngày", "Đến ngày", "Trạng thái"
         }, 0) {
             @Override public boolean isCellEditable(int row, int column) { return false; }
         };
         final JTable bang = new JTable(model);
         final List<LichHocLop> theoMon = new ArrayList<>();
+        final List<LichHocLop> lichDayDu = new ArrayList<>();
         final List<LichHocLop> hienThi = new ArrayList<>();
         final List<KhoaHoc> khoa = new ArrayList<>();
         final List<LopTrungTam> lop = new ArrayList<>();
+        final List<HocVienTheoLop> hocVien = new ArrayList<>();
+        final List<DuKienKetThucLop.BuoiDieuChinh> buoiDieuChinh = new ArrayList<>();
         final JPanel panel = new JPanel(new BorderLayout(5, 8));
         final JPanel cardPanel = new JPanel(new CardLayout());
         final JPanel luoiThe = new JPanel(new GridLayout(0, 3, 14, 14));
         final ThoiKhoaBieuTuanPanel lichTuan;
         final NutCheDo btnDanhSach;
         final NutCheDo btnThoiKhoaBieu;
-        final Consumer<List<LichHocLop>> khiChiTiet;
         final Consumer<List<LichHocLop>> khiSuaCard;
-        final Consumer<List<LichHocLop>> khiHuyCard;
         LichHocLop lichDaChon;
         boolean dangNap;
         boolean xemTkb;
 
         TabTheoMon(int maMon, LocalDate tuan,
                    Consumer<LocalDate> khiChonTuan, Consumer<Boolean> khiDoiCheDo,
-                   Consumer<List<LichHocLop>> khiChiTiet,
                    Consumer<List<LichHocLop>> khiSuaCard,
-                   Consumer<List<LichHocLop>> khiHuyCard) {
+                   Consumer<LichHocLop> khiSuaOThoiKhoaBieu) {
             this.maMon = maMon;
-            this.khiChiTiet = khiChiTiet;
             this.khiSuaCard = khiSuaCard;
-            this.khiHuyCard = khiHuyCard;
             lichTuan = new ThoiKhoaBieuTuanPanel(tuan, khiChonTuan);
-            lichTuan.datXuLyChon(this::chonLichTrongBang);
+            lichTuan.datXuLyChon(lich -> {
+                chonLichTrongBang(lich);
+                LichHocLop goc = lichDayDu.stream()
+                        .filter(x -> x.maLichHoc() == lich.maLichHoc())
+                        .findFirst().orElse(lich);
+                khiSuaOThoiKhoaBieu.accept(goc);
+            });
             btnDanhSach = new NutCheDo(maMon == -1 ? "Danh sách" : "Dạng danh sách", false);
             btnThoiKhoaBieu = new NutCheDo(maMon == -1 ? "Thời khóa biểu" : "Dạng ô", true);
 
@@ -137,14 +155,25 @@ public final class LichHocLopPanel extends JPanel {
             bang.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             bang.setAutoCreateRowSorter(true);
             bang.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-            int[] widths = {195, 165, 85, 88, 88, 112, 112, 105};
+            int[] widths = {185, 155, 145, 100, 85, 88, 88, 112, 112, 105};
             for (int i = 0; i < widths.length; i++)
                 bang.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
             locKhoa.setPrototypeDisplayValue(new LuaChon(-1, "Khóa học có tên rất dài"));
             locLop.setPrototypeDisplayValue(new LuaChon(-1, "Tên lớp học có tên rất dài"));
-            JPanel boLoc = new JPanel(new FlowLayout(FlowLayout.LEFT, 9, 3));
-            boLoc.add(new JLabel("Khóa học:")); boLoc.add(locKhoa);
-            boLoc.add(new JLabel("Lớp học:")); boLoc.add(locLop);
+            locGiaoVien.setPrototypeDisplayValue(new LuaChon(-1, "Tên giáo viên khá dài"));
+            locPhong.setPrototypeDisplayValue(new LuaChon(-1, "Phòng học dài"));
+            locHocVien.setPrototypeDisplayValue(new LuaChon(-1, "Học viên có tên khá dài"));
+            JPanel boLoc = new JPanel(new GridLayout(2, 1, 0, 2));
+            JPanel hangMot = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+            boLoc.setOpaque(false); hangMot.setOpaque(false);
+            hangMot.add(new JLabel("Khóa học:")); hangMot.add(locKhoa);
+            hangMot.add(new JLabel("Lớp học:")); hangMot.add(locLop);
+            hangMot.add(new JLabel("Giáo viên:")); hangMot.add(locGiaoVien);
+            JPanel hangHai = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+            hangHai.setOpaque(false);
+            hangHai.add(new JLabel("Phòng học:")); hangHai.add(locPhong);
+            hangHai.add(new JLabel("Học viên đã xếp lớp:")); hangHai.add(locHocVien);
+            boLoc.add(hangMot); boLoc.add(hangHai);
             JPanel cheDo = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 3));
             cheDo.add(btnDanhSach);
             cheDo.add(btnThoiKhoaBieu);
@@ -207,6 +236,18 @@ public final class LichHocLopPanel extends JPanel {
             LuaChon x = (LuaChon) locLop.getSelectedItem();
             return x == null ? -1 : x.ma();
         }
+        private static int maDangLoc(JComboBox<LuaChon> cbo) {
+            LuaChon x = (LuaChon) cbo.getSelectedItem();
+            return x == null ? -1 : x.ma();
+        }
+        int maGiaoVienDangLoc() { return maDangLoc(locGiaoVien); }
+        int maPhongDangLoc() { return maDangLoc(locPhong); }
+        int maHocVienDangLoc() { return maDangLoc(locHocVien); }
+
+        private LopTrungTam lopTheoMa(int maLop) {
+            for (LopTrungTam x : lop) if (x.maLop() == maLop) return x;
+            return null;
+        }
         void napLocLop(int maLopMuonChon) {
             dangNap = true;
             locLop.removeAllItems();
@@ -224,24 +265,52 @@ public final class LichHocLopPanel extends JPanel {
             if (dangNap) return;
             int maKhoa = maKhoaDangLoc();
             int maLop = maLopDangLoc();
+            int maGiaoVien = maGiaoVienDangLoc();
+            int maPhong = maPhongDangLoc();
+            int maHocVien = maHocVienDangLoc();
             model.setRowCount(0);
             hienThi.clear();
             for (LichHocLop x : theoMon) {
                 if (maKhoa > 0 && x.maKhoaHoc() != maKhoa) continue;
                 if (maLop > 0 && x.maLop() != maLop) continue;
-                hienThi.add(x);
-                model.addRow(new Object[]{
-                        x.tenLop(), x.tenKhoaHoc(), LichHocLopService.tenThu(x.thuTrongTuan()),
-                        hienThiGio(x.gioBatDau()), hienThiGio(x.gioKetThuc()),
-                        NgayLichHocPicker.hienThiNgay(x.tuNgay()),
-                        NgayLichHocPicker.hienThiNgay(x.denNgay()),
-                        "HIEU_LUC".equals(x.trangThai()) ? "Hiệu lực" : "Đã hủy"
-                });
+                LopTrungTam lopCuaLich = lopTheoMa(x.maLop());
+                if (maGiaoVien > 0 && (lopCuaLich == null
+                        || !Integer.valueOf(maGiaoVien).equals(lopCuaLich.maGiaoVien()))) continue;
+                if (maPhong > 0 && !Integer.valueOf(maPhong).equals(x.maPhong())) continue;
+                if (maHocVien <= 0) {
+                    themDong(x, lopCuaLich);
+                } else {
+                    for (HocVienTheoLop hv : hocVien) {
+                        if (hv.maHocVien() != maHocVien || hv.maLop() != x.maLop()) continue;
+                        LichHocLop trongDotXep = LichHocLopService.gioiHanTheoXep(x, hv);
+                        if (trongDotXep != null) themDong(trongDotXep, lopCuaLich);
+                    }
+                }
             }
             if (lichDaChon != null && hienThi.stream().noneMatch(x ->
                     x.maLichHoc() == lichDaChon.maLichHoc())) lichDaChon = null;
             lichTuan.datDanhSach(hienThi);
+            Set<Integer> lopDangXem = new java.util.HashSet<>();
+            for (LichHocLop x : hienThi) lopDangXem.add(x.maLop());
+            if (maLop > 0) lopDangXem.add(maLop);
+            lichTuan.datBuoiDieuChinh(buoiDieuChinh.stream()
+                    .filter(x -> lopDangXem.contains(x.maLop())).toList());
             if (maMon != -1) hienThiTheLop();
+        }
+
+        private void themDong(LichHocLop x, LopTrungTam lopCuaLich) {
+            hienThi.add(x);
+            model.addRow(new Object[]{
+                    x.tenLop(), x.tenKhoaHoc(),
+                    lopCuaLich == null || lopCuaLich.tenGiaoVien() == null
+                            ? "Chưa phân công" : lopCuaLich.tenGiaoVien(),
+                    x.tenPhong() == null ? "Chưa gán" : x.tenPhong(),
+                    LichHocLopService.tenThu(x.thuTrongTuan()),
+                    hienThiGio(x.gioBatDau()), hienThiGio(x.gioKetThuc()),
+                    NgayLichHocPicker.hienThiNgay(x.tuNgay()),
+                    NgayLichHocPicker.hienThiNgay(x.denNgay()),
+                    "HIEU_LUC".equals(x.trangThai()) ? "Hiệu lực" : "Đã hủy"
+            });
         }
 
         private void hienThiTheLop() {
@@ -296,6 +365,35 @@ public final class LichHocLopPanel extends JPanel {
             JLabel khoaHoc = new JLabel("<html><b>Khóa học:</b> " + esc(dau.tenKhoaHoc()) + "</html>");
             khoaHoc.setAlignmentX(LEFT_ALIGNMENT);
             thongTin.add(khoaHoc);
+            KhoaHoc khoaCuaLop = khoa.stream()
+                    .filter(k -> k.maKhoaHoc() == dau.maKhoaHoc()).findFirst().orElse(null);
+            LopTrungTam lopCuaLich = lop.stream()
+                    .filter(l -> l.maLop() == dau.maLop()).findFirst().orElse(null);
+            if (khoaCuaLop != null && lopCuaLich != null) {
+                JLabel giaoVien = new JLabel("Giáo viên: " +
+                        (lopCuaLich.tenGiaoVien() == null ? "Chưa phân công"
+                                : lopCuaLich.tenGiaoVien()));
+                giaoVien.setAlignmentX(LEFT_ALIGNMENT);
+                thongTin.add(giaoVien);
+                List<LichHocLop> lichCuaLop = lichDayDu.stream()
+                        .filter(x -> x.maLop() == dau.maLop()).toList();
+                List<DuKienKetThucLop.BuoiDieuChinh> buoiCuaLop = buoiDieuChinh.stream()
+                        .filter(x -> x.maLop() == dau.maLop()).toList();
+                LocalDate batDau = lopCuaLich.ngayKhaiGiang();
+                if (batDau == null) batDau = lichCuaLop.stream()
+                        .filter(x -> "HIEU_LUC".equals(x.trangThai()))
+                        .map(LichHocLop::tuNgay).min(LocalDate::compareTo).orElse(null);
+                String duKien = batDau == null ? "Chưa xác định" :
+                        DuKienKetThucLop.tinh(batDau, khoaCuaLop.tongSoBuoi(),
+                                        lichCuaLop, buoiCuaLop, Set.of())
+                                .map(NgayLichHocPicker::hienThiNgay)
+                                .orElse("Lịch hiện tại chưa đủ buổi");
+                JLabel ketThuc = new JLabel("Dự kiến kết thúc: " + duKien);
+                ketThuc.setAlignmentX(LEFT_ALIGNMENT);
+                ketThuc.setToolTipText("Tính từ ngày khai giảng và các ca đang hiệu lực; "
+                        + "chưa trừ buổi nghỉ hoặc thay đổi thực tế.");
+                thongTin.add(ketThuc);
+            }
             thongTin.add(new JLabel(" "));
             JLabel soBuoi = new JLabel("Lịch học (" + ds.size() + " buổi):");
             soBuoi.setFont(soBuoi.getFont().deriveFont(Font.BOLD, 12f));
@@ -310,7 +408,9 @@ public final class LichHocLopPanel extends JPanel {
             for (LichHocLop lh : ds) {
                 String gio = hienThiGio(lh.gioBatDau()) + " – " + hienThiGio(lh.gioKetThuc());
                 JLabel buoi = new JLabel("<html><b>" + esc(LichHocLopService.tenThu(lh.thuTrongTuan()))
-                        + ":</b> " + esc(gio) + ("HUY".equals(lh.trangThai())
+                        + ":</b> " + esc(gio) + " · "
+                        + esc(lh.tenPhong() == null ? "Chưa gán phòng" : lh.tenPhong())
+                        + ("HUY".equals(lh.trangThai())
                         ? " <font color='#A94442'>(Đã hủy)</font>" : "") + "</html>");
                 buoi.setToolTipText("Từ " + NgayLichHocPicker.hienThiNgay(lh.tuNgay())
                         + " đến " + (lh.denNgay() == null ? "không giới hạn"
@@ -321,25 +421,26 @@ public final class LichHocLopPanel extends JPanel {
             thongTin.add(cacBuoi);
             card.add(thongTin, BorderLayout.CENTER);
 
-            JPanel hanhDong = new JPanel(new GridLayout(1, 3, 5, 0));
-            hanhDong.setOpaque(false);
-            hanhDong.setBorder(BorderFactory.createEmptyBorder(2, 9, 0, 9));
-            // Ve mau chu/nen truc tiep: Windows Look & Feel khong the lam mo chu.
-            JButton chiTiet = nutHopThoai("Chi tiết", new Color(0xE8EEEB), CHU_DAM);
-            JButton sua = nutHopThoai("Sửa", new Color(0x1865AD), Color.WHITE);
-            JButton huy = nutHopThoai("Hủy buổi", new Color(0xBD3932), Color.WHITE);
-            chiTiet.setToolTipText("Xem đầy đủ các buổi, khoảng ngày áp dụng và trạng thái");
-            sua.setToolTipText("Chọn một buổi để chỉnh sửa");
-            huy.setToolTipText("Chọn một buổi để hủy (không xóa dữ liệu SQL)");
-            for (JButton b : new JButton[]{chiTiet, sua, huy})
-                b.setPreferredSize(new Dimension(95, 36));
-            chiTiet.addActionListener(e -> khiChiTiet.accept(ds));
-            sua.addActionListener(e -> khiSuaCard.accept(ds));
-            huy.addActionListener(e -> khiHuyCard.accept(ds));
-            hanhDong.add(chiTiet); hanhDong.add(sua); hanhDong.add(huy);
-            card.add(hanhDong, BorderLayout.SOUTH);
-            card.setPreferredSize(new Dimension(306, 235 + Math.max(0, ds.size() - 2) * 26));
+            // Bam vao BAT KY vi tri nao cua the de sua; khong con ba nut Chi tiet/Sua/Huy.
+            card.setToolTipText("Nhấn vào thẻ lớp để sửa lịch học");
+            ganClickThe(card, () -> khiSuaCard.accept(ds.stream()
+                    .map(x -> lichDayDu.stream()
+                            .filter(goc -> goc.maLichHoc() == x.maLichHoc())
+                            .findFirst().orElse(x))
+                    .toList()));
+            card.setPreferredSize(new Dimension(306, 229 + Math.max(0, ds.size() - 2) * 26));
             return card;
+        }
+
+        private static void ganClickThe(java.awt.Component c, Runnable action) {
+            c.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+            c.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override public void mouseClicked(java.awt.event.MouseEvent e) {
+                    if (javax.swing.SwingUtilities.isLeftMouseButton(e)) action.run();
+                }
+            });
+            if (c instanceof java.awt.Container container)
+                for (java.awt.Component child : container.getComponents()) ganClickThe(child, action);
         }
 
         private static String esc(String s) {
@@ -429,22 +530,32 @@ public final class LichHocLopPanel extends JPanel {
         JLabel title = new JLabel("QUẢN LÝ LỊCH HỌC – TRUNG TÂM");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 22f));
         JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        JButton btnTim = new JButton("Tìm kiếm");
-        JButton btnTaiLai = new JButton("Làm mới");
-        JButton btnThem = new JButton("Thêm");
-        JButton btnSua = new JButton("Sửa");
-        btnTaiLai.setToolTipText("Tải dữ liệu mới từ SQL Server và giữ nguyên bộ lọc đang chọn");
-        btnXoaLoc.setToolTipText("Bỏ từ khóa, trạng thái, khóa học và lớp học đang lọc");
+        JButton btnTim = new NutMau("Tìm kiếm", NutMau.Kieu.CHINH);
+        JButton btnTaiLai = new NutMau("Làm mới", NutMau.Kieu.PHU);
+        JButton btnThem = new NutMau("Thêm", NutMau.Kieu.CHINH);
+        JButton btnHuyBuoi = new NutMau("Hủy buổi học", NutMau.Kieu.PHU);
+        JButton btnThemBu = new NutMau("Thêm buổi học bù", NutMau.Kieu.CHINH);
+                btnTaiLai.setToolTipText("Tải dữ liệu mới từ SQL Server và giữ nguyên bộ lọc đang chọn");
+        btnXoaLoc.setToolTipText("Bỏ từ khóa, trạng thái, khóa, lớp, giáo viên, phòng và học viên đang lọc");
         btnXoaLoc.setVisible(false);  // Chi hien khi thuc su dang loc.
         toolbar.add(new JLabel("Môn / khóa / lớp / thứ:"));
         toolbar.add(txtTim);
         toolbar.add(new JLabel("Trạng thái:"));
         toolbar.add(locTrangThai);
         toolbar.add(btnTim); toolbar.add(btnTaiLai);
-        toolbar.add(btnXoaLoc); toolbar.add(btnThem); toolbar.add(btnSua);
+        toolbar.add(btnXoaLoc);
+        JPanel thanhTacVu = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 1));
+        thanhTacVu.add(btnThem);
+        thanhTacVu.add(btnHuyBuoi);
+        thanhTacVu.add(btnThemBu);
+        btnHuyBuoi.setToolTipText("Chỉ hủy một ngày học; lịch lặp vẫn được giữ");
+        btnThemBu.setToolTipText("Chọn lớp, ngày, một trong 8 ca và phòng cho buổi bù");
+        JPanel cacThanh = new JPanel(new BorderLayout(0, 3));
+        cacThanh.add(toolbar, BorderLayout.NORTH);
+        cacThanh.add(thanhTacVu, BorderLayout.SOUTH);
         JPanel dau = new JPanel(new BorderLayout(4, 8));
         dau.add(title, BorderLayout.NORTH);
-        dau.add(toolbar, BorderLayout.CENTER);
+        dau.add(cacThanh, BorderLayout.CENTER);
         add(dau, BorderLayout.NORTH);
         add(tabMonHoc, BorderLayout.CENTER);
         add(thongBao, BorderLayout.SOUTH);
@@ -471,6 +582,9 @@ public final class LichHocLopPanel extends JPanel {
                 if (tab != null) {
                     tab.locKhoa.setSelectedIndex(0);
                     tab.locLop.setSelectedIndex(0);
+                    tab.locGiaoVien.setSelectedIndex(0);
+                    tab.locPhong.setSelectedIndex(0);
+                    tab.locHocVien.setSelectedIndex(0);
                 }
             } finally {
                 dangXoaLoc = false;
@@ -479,10 +593,8 @@ public final class LichHocLopPanel extends JPanel {
             taiDuLieu();
         });
         btnThem.addActionListener(e -> moForm(null));
-        btnSua.addActionListener(e -> {
-            LichHocLop chon = lichDuocChon();
-            if (chon != null) moForm(chon);
-        });
+        btnHuyBuoi.addActionListener(e -> moHuyMotNgay());
+        btnThemBu.addActionListener(e -> moThemBuoiBu());
         tabMonHoc.addChangeListener(e -> {
             capNhatThongBao();
             capNhatNutXoaLoc();
@@ -494,7 +606,9 @@ public final class LichHocLopPanel extends JPanel {
     private void capNhatNutXoaLoc() {
         TabTheoMon tab = tabDangChon();
         boolean coLoc = !txtTim.getText().isBlank() || locTrangThai.getSelectedIndex() > 0
-                || (tab != null && (tab.maKhoaDangLoc() > 0 || tab.maLopDangLoc() > 0));
+                || (tab != null && (tab.maKhoaDangLoc() > 0 || tab.maLopDangLoc() > 0
+                || tab.maGiaoVienDangLoc() > 0 || tab.maPhongDangLoc() > 0
+                || tab.maHocVienDangLoc() > 0));
         if (btnXoaLoc.isVisible() != coLoc) {
             btnXoaLoc.setVisible(coLoc);
             btnXoaLoc.getParent().revalidate();
@@ -518,6 +632,9 @@ public final class LichHocLopPanel extends JPanel {
         final int maMonTruoc = cu == null ? -1 : cu.maMon;
         final int maKhoaTruoc = cu == null ? -1 : cu.maKhoaDangLoc();
         final int maLopTruoc = cu == null ? -1 : cu.maLopDangLoc();
+        final int maGiaoVienTruoc = cu == null ? -1 : cu.maGiaoVienDangLoc();
+        final int maPhongTruoc = cu == null ? -1 : cu.maPhongDangLoc();
+        final int maHocVienTruoc = cu == null ? -1 : cu.maHocVienDangLoc();
         final int luot = ++lanTai;
         final String tim = txtTim.getText();
         final String trangThai = trangThaiLoc();
@@ -525,15 +642,20 @@ public final class LichHocLopPanel extends JPanel {
         new SwingWorker<DuLieu, Void>() {
             @Override protected DuLieu doInBackground() throws Exception {
                 return new DuLieu(controller.layMonHoc(), controller.layKhoaHoc(),
-                        controller.layLop(), controller.timKiem(tim, trangThai));
+                        controller.layLop(), controller.timKiem(tim, trangThai),
+                        controller.timKiem("", null), controller.layPhongHoc(),
+                        controller.layHocVienTheoLop(), controller.layBuoiDieuChinh());
             }
             @Override protected void done() {
                 if (luot != lanTai) return;
                 try {
                     DuLieu dl = get();
+                    danhSachPhong = dl.phong();
+                    tatCaLich = dl.tatCa();
                     // Chi phuc hoi tab va bo loc truoc khi tai lai;
                     // khong tu dong nhay vao lop vua Them/Sua.
-                    taoTabs(dl, maMonTruoc, maKhoaTruoc, maLopTruoc);
+                    taoTabs(dl, maMonTruoc, maKhoaTruoc, maLopTruoc,
+                            maGiaoVienTruoc, maPhongTruoc, maHocVienTruoc);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt(); hienLoi(ex);
                 } catch (ExecutionException ex) { hienLoi(ex); }
@@ -545,7 +667,8 @@ public final class LichHocLopPanel extends JPanel {
      * Tab Tong luon o vi tri dau, lay tat ca lich Trung tam do controller tra ve.
      * Cac tab mon cu giu nguyen cach loc; thay doi tuan va che do xem dong bo.
      */
-    private void taoTabs(DuLieu dl, int monMuonChon, int khoaMuonLoc, int lopMuonLoc) {
+    private void taoTabs(DuLieu dl, int monMuonChon, int khoaMuonLoc, int lopMuonLoc,
+                         int giaoVienMuonLoc, int phongMuonLoc, int hocVienMuonLoc) {
         cacTab.clear();
         tabMonHoc.removeAll();
 
@@ -556,9 +679,15 @@ public final class LichHocLopPanel extends JPanel {
             tong.locKhoa.addItem(new LuaChon(k.maKhoaHoc(), k.tenKhoaHoc()));
         }
         tong.lop.addAll(dl.lop());
+        tong.hocVien.addAll(dl.hocVien());
+        tong.buoiDieuChinh.addAll(dl.buoiDieuChinh());
         tong.theoMon.addAll(dl.lich());
+        tong.lichDayDu.addAll(dl.tatCa());
         hoanTatTab(tong, monMuonChon == -1 ? khoaMuonLoc : -1,
-                monMuonChon == -1 ? lopMuonLoc : -1);
+                monMuonChon == -1 ? lopMuonLoc : -1,
+                monMuonChon == -1 ? giaoVienMuonLoc : -1,
+                monMuonChon == -1 ? phongMuonLoc : -1,
+                monMuonChon == -1 ? hocVienMuonLoc : -1, dl.phong());
         cacTab.add(tong);
         tabMonHoc.addTab("Tổng (" + tong.theoMon.size() + ")", tong.panel);
 
@@ -576,11 +705,26 @@ public final class LichHocLopPanel extends JPanel {
             for (LopTrungTam l : dl.lop()) {
                 if (l.maMonHoc() == mon.maMonHoc()) tab.lop.add(l);
             }
+            for (HocVienTheoLop hv : dl.hocVien()) {
+                if (tab.lop.stream().anyMatch(l -> l.maLop() == hv.maLop()))
+                    tab.hocVien.add(hv);
+            }
+            for (DuKienKetThucLop.BuoiDieuChinh buoi : dl.buoiDieuChinh()) {
+                if (tab.lop.stream().anyMatch(l -> l.maLop() == buoi.maLop()))
+                    tab.buoiDieuChinh.add(buoi);
+            }
             for (LichHocLop lh : dl.lich()) {
                 if (lh.maMonHoc() == mon.maMonHoc()) tab.theoMon.add(lh);
             }
+            for (LichHocLop lh : dl.tatCa()) {
+                if (lh.maMonHoc() == mon.maMonHoc()) tab.lichDayDu.add(lh);
+            }
             hoanTatTab(tab, mon.maMonHoc() == monMuonChon ? khoaMuonLoc : -1,
-                    mon.maMonHoc() == monMuonChon ? lopMuonLoc : -1);
+                    mon.maMonHoc() == monMuonChon ? lopMuonLoc : -1,
+                    mon.maMonHoc() == monMuonChon ? giaoVienMuonLoc : -1,
+                    mon.maMonHoc() == monMuonChon ? phongMuonLoc : -1,
+                    mon.maMonHoc() == monMuonChon ? hocVienMuonLoc : -1,
+                    dl.phong());
             cacTab.add(tab);
             long soLop = tab.theoMon.stream().map(LichHocLop::maLop).distinct().count();
             tabMonHoc.addTab(mon.tenMonHoc() + " (" + soLop + " lớp · "
@@ -603,7 +747,8 @@ public final class LichHocLopPanel extends JPanel {
                     TabTheoMon x = tabDangChon();
                     if (x != null) x.datCheDo(hienTkb);
                 },
-                this::xemChiTietThe, this::suaBuoiTrongThe, this::huyBuoiTrongThe);
+                this::suaBuoiTrongThe,
+                this::moForm);
         tab.datCheDo(true);
         tab.dangNap = true;
         tab.locKhoa.addItem(new LuaChon(-1, "Tất cả khóa học"));
@@ -611,9 +756,32 @@ public final class LichHocLopPanel extends JPanel {
         return tab;
     }
 
-    private void hoanTatTab(TabTheoMon tab, int khoaMuonLoc, int lopMuonLoc) {
+    private void hoanTatTab(TabTheoMon tab, int khoaMuonLoc, int lopMuonLoc,
+                            int giaoVienMuonLoc, int phongMuonLoc,
+                            int hocVienMuonLoc, List<PhongHoc> cacPhong) {
         tab.dangNap = true;
+        tab.locGiaoVien.addItem(new LuaChon(-1, "Tất cả giáo viên"));
+        tab.locPhong.addItem(new LuaChon(-1, "Tất cả phòng"));
+        tab.locHocVien.addItem(new LuaChon(-1, "Tất cả học viên"));
+        Map<Integer, String> giaoVien = new LinkedHashMap<>();
+        Map<Integer, String> tenGiaoVienTheoLop = new LinkedHashMap<>();
+        for (LopTrungTam l : tab.lop) {
+            if (l.maGiaoVien() == null) continue;
+            String ten = l.tenGiaoVien() == null ? "Mã " + l.maGiaoVien() : l.tenGiaoVien();
+            giaoVien.putIfAbsent(l.maGiaoVien(), ten);
+            tenGiaoVienTheoLop.put(l.maLop(), ten);
+        }
+        giaoVien.forEach((ma, ten) -> tab.locGiaoVien.addItem(new LuaChon(ma, ten)));
+        tab.lichTuan.datGiaoVienTheoLop(tenGiaoVienTheoLop);
+        tab.lichTuan.datThongTinLop(tab.lop);
+        for (PhongHoc p : cacPhong) tab.locPhong.addItem(new LuaChon(p.maPhong(), p.tenPhong()));
+        Map<Integer, String> hocVien = new LinkedHashMap<>();
+        for (HocVienTheoLop h : tab.hocVien) hocVien.putIfAbsent(h.maHocVien(), h.hoTen());
+        hocVien.forEach((ma, ten) -> tab.locHocVien.addItem(new LuaChon(ma, ten + " (#" + ma + ")")));
         chon(tab.locKhoa, khoaMuonLoc);
+        chon(tab.locGiaoVien, giaoVienMuonLoc);
+        chon(tab.locPhong, phongMuonLoc);
+        chon(tab.locHocVien, hocVienMuonLoc);
         tab.dangNap = false;
         tab.napLocLop(lopMuonLoc);
         tab.locKhoa.addActionListener(e -> {
@@ -622,6 +790,12 @@ public final class LichHocLopPanel extends JPanel {
         tab.locLop.addActionListener(e -> {
             if (!tab.dangNap) { tab.hienThiTheoBoLoc(); capNhatThongBao(); capNhatNutXoaLoc(); }
         });
+        for (JComboBox<LuaChon> cbo : List.of(tab.locGiaoVien, tab.locPhong, tab.locHocVien))
+            cbo.addActionListener(e -> {
+                if (!tab.dangNap) {
+                    tab.hienThiTheoBoLoc(); capNhatThongBao(); capNhatNutXoaLoc();
+                }
+            });
     }
 
     private void capNhatThongBao() {
@@ -635,26 +809,6 @@ public final class LichHocLopPanel extends JPanel {
             if (cbo.getItemAt(i).ma() == ma) { cbo.setSelectedIndex(i); return; }
         }
         cbo.setSelectedIndex(0);
-    }
-
-    private LichHocLop lichDuocChon() {
-        TabTheoMon tab = tabDangChon();
-        if (tab == null) {
-            JOptionPane.showMessageDialog(this, "Hãy chọn một môn học");
-            return null;
-        }
-        if (tab.xemTkb) {
-            if (tab.lichDaChon != null) return tab.lichDaChon;
-            if (tab.maMon != -1)
-                return chonMotBuoi(tab.hienThi, "Chọn buổi học cần sửa");
-            JOptionPane.showMessageDialog(this, "Hãy bấm chọn một ô trên thời khóa biểu trước khi sửa.");
-            return null;
-        }
-        if (tab.bang.getSelectedRow() < 0) {
-            JOptionPane.showMessageDialog(this, "Hãy chọn một dòng trong danh sách lịch học.");
-            return null;
-        }
-        return tab.hienThi.get(tab.bang.convertRowIndexToModel(tab.bang.getSelectedRow()));
     }
 
     private static final Color XANH_DAM = new Color(0x075F31);
@@ -769,191 +923,231 @@ public final class LichHocLopPanel extends JPanel {
         return dialog;
     }
 
-    /** Chon dung mot buoi theo tung dong; khong dung JComboBox chen ep chu. */
-    private LichHocLop chonMotBuoi(List<LichHocLop> ds, String tieuDe) {
-        if (ds == null || ds.isEmpty()) return null;
-        JDialog dialog = cuaSo(tieuDe);
-        JPanel goc = new JPanel(new BorderLayout(0, 0));
-        goc.setBackground(Color.WHITE);
-        LichHocLop dau = ds.get(0);
-        goc.add(tieuDeHopThoai(tieuDe, dau.tenLop()), BorderLayout.NORTH);
-
-        JPanel dsBuoi = new JPanel();
-        dsBuoi.setLayout(new BoxLayout(dsBuoi, BoxLayout.Y_AXIS));
-        dsBuoi.setBackground(Color.WHITE);
-        dsBuoi.setBorder(BorderFactory.createEmptyBorder(12, 16, 8, 16));
-        ButtonGroup nhom = new ButtonGroup();
-        List<JRadioButton> chon = new ArrayList<>();
-        List<LichHocLop> sapXep = new ArrayList<>(ds);
-        sapXep.sort(Comparator.comparingInt(LichHocLop::thuTrongTuan)
-                .thenComparing(LichHocLop::gioBatDau));
-        for (LichHocLop lh : sapXep) {
-            JRadioButton rb = new JRadioButton();
-            rb.setOpaque(false);
-            rb.setFocusPainted(false);
-            nhom.add(rb);
-            chon.add(rb);
-            JPanel noiDung = new JPanel(new GridLayout(2, 1, 0, 2));
-            noiDung.setOpaque(false);
-            JLabel ten = new JLabel(LichHocLopService.tenThu(lh.thuTrongTuan())
-                    + "  |  " + chuoiGio(lh) + ("HUY".equals(lh.trangThai()) ? "  ·  Đã hủy" : ""));
-            ten.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
-            ten.setForeground(CHU_DAM);
-            JLabel apDung = new JLabel("Áp dụng: " + ngayHieuLuc(lh));
-            apDung.setForeground(new Color(0x60776A));
-            apDung.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
-            noiDung.add(ten);
-            noiDung.add(apDung);
-            JPanel dong = new JPanel(new BorderLayout(10, 0));
-            dong.setBackground(NEN_NHAT);
-            dong.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(new Color(0xD1E5D8)),
-                    BorderFactory.createEmptyBorder(10, 12, 10, 12)));
-            dong.add(rb, BorderLayout.WEST);
-            dong.add(noiDung, BorderLayout.CENTER);
-            dong.setAlignmentX(LEFT_ALIGNMENT);
-            dong.setMaximumSize(new Dimension(Integer.MAX_VALUE, 74));
-            dsBuoi.add(dong);
-            dsBuoi.add(Box.createVerticalStrut(8));
-            java.awt.event.MouseAdapter click = new java.awt.event.MouseAdapter() {
-                @Override public void mouseClicked(java.awt.event.MouseEvent e) { rb.setSelected(true); }
-            };
-            dong.addMouseListener(click);
-            noiDung.addMouseListener(click);
-            ten.addMouseListener(click);
-            apDung.addMouseListener(click);
+    private void suaBuoiTrongThe(List<LichHocLop> ds) {
+        // Mot cua so Sua chung; bang da tich cac buoi dang hoc.
+        if (!ds.isEmpty()) {
+            LichHocLop dau = ds.stream().filter(x -> "HIEU_LUC".equals(x.trangThai()))
+                    .findFirst().orElse(ds.get(0));
+            moForm(dau);
         }
-        chon.get(0).setSelected(true);
-        JScrollPane cuon = new JScrollPane(dsBuoi,
+    }
+
+    /** Mot ngay bi huy duoc ghi vao BuoiHoc; khong thay doi lich lap. */
+    private void moHuyMotNgay() {
+        TabTheoMon tab = tabDangChon();
+        LocalDate homNay = LocalDate.now();
+        int maLopLoc = tab == null ? -1 : tab.maLopDangLoc();
+        List<LichHocLop> cacLich = tatCaLich.stream()
+                .filter(x -> "HIEU_LUC".equals(x.trangThai()))
+                .filter(x -> x.gioBatDau() != null && x.gioKetThuc() != null
+                        && CaHocTrungTam.timTheoGio(x.gioBatDau(), x.gioKetThuc()).isPresent())
+                .filter(x -> x.denNgay() == null || !x.denNgay().isBefore(homNay))
+                .filter(x -> tab == null || tab.maMon < 0 || x.maMonHoc() == tab.maMon)
+                .filter(x -> maLopLoc <= 0 || x.maLop() == maLopLoc)
+                .filter(x -> ngayTiepTheo(x, homNay) != null)
+                .toList();
+        if (cacLich.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Không có lịch hiệu lực sắp tới trong bộ lọc hiện tại.",
+                    "Chưa thể hủy buổi", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        JComboBox<LuaChon> cboLich = new JComboBox<>();
+        for (LichHocLop x : cacLich) cboLich.addItem(new LuaChon(x.maLichHoc(),
+                x.tenLop() + " · " + LichHocLopService.tenThu(x.thuTrongTuan())
+                + " " + chuoiGio(x) + " · từ "
+                + NgayLichHocPicker.hienThiNgay(x.tuNgay())));
+        cboLich.setPrototypeDisplayValue(new LuaChon(-1,
+                "Tên lớp học dài · Chủ nhật 17:30–19:00 · từ 31/12/2035"));
+        if (tab != null && tab.lichDaChon != null)
+            chon(cboLich, tab.lichDaChon.maLichHoc());
+        NgayLichHocPicker ngay = new NgayLichHocPicker(ngayTiepTheo(
+                timLich(cacLich, ((LuaChon) cboLich.getSelectedItem()).ma()), homNay));
+        cboLich.addActionListener(e -> {
+            LuaChon x = (LuaChon) cboLich.getSelectedItem();
+            if (x != null) ngay.datNgay(ngayTiepTheo(timLich(cacLich, x.ma()), homNay));
+        });
+        JTextField lyDo = new JTextField(30);
+        JPanel form = formBuoi(
+                truongForm("Lịch lặp cần hủy một ngày", cboLich),
+                truongForm("Ngày học cần hủy", ngay),
+                truongForm("Lý do hủy", lyDo));
+        while (hienHopThoaiBuoi("HỦY MỘT BUỔI HỌC",
+                "Chỉ ngày đã chọn bị hủy; lịch các tuần khác được giữ nguyên", form)) {
+            try {
+                LuaChon chon = (LuaChon) cboLich.getSelectedItem();
+                LichHocLop lich = chon == null ? null : timLich(cacLich, chon.ma());
+                LocalDate ngayHoc = ngay.layNgay();
+                if (lich == null || ngayHoc == null || ngayHoc.isBefore(homNay)
+                        || ngayHoc.isBefore(lich.tuNgay())
+                        || (lich.denNgay() != null && ngayHoc.isAfter(lich.denNgay()))
+                        || ngayHoc.getDayOfWeek().getValue() + 1 != lich.thuTrongTuan())
+                    throw new IllegalArgumentException("Ngày hủy phải thuộc đúng thứ và khoảng ngày của lịch đã chọn");
+                String lyDoLuu = lyDo.getText().trim();
+                if (lyDoLuu.isBlank()) throw new IllegalArgumentException("Hãy nhập lý do hủy buổi");
+                if (lyDoLuu.length() > 500)
+                    throw new IllegalArgumentException("Lý do tối đa 500 ký tự");
+                if (!xacNhanBuoi("Hủy buổi " + NgayLichHocPicker.hienThiNgay(ngayHoc)
+                        + " của lớp " + lich.tenLop() + "?")) return;
+                luuDieuChinhBuoi("Đang hủy một buổi học...", "Đã hủy một buổi học.",
+                        () -> controller.huyBuoi(lich.maLichHoc(), ngayHoc, lyDoLuu));
+                return;
+            } catch (IllegalArgumentException ex) {
+                JOptionPane.showMessageDialog(this, ex.getMessage(),
+                        "Dữ liệu chưa hợp lệ", JOptionPane.WARNING_MESSAGE);
+            }
+        }
+    }
+
+    private void moThemBuoiBu() {
+        TabTheoMon tab = tabDangChon();
+        int maLopLoc = tab == null ? -1 : tab.maLopDangLoc();
+        List<LopTrungTam> cacLop = tab == null ? List.of() : tab.lop.stream()
+                .filter(x -> !"DA_DONG".equals(x.trangThai()))
+                .filter(x -> maLopLoc <= 0 || x.maLop() == maLopLoc).toList();
+        List<PhongHoc> phongHoatDong = danhSachPhong.stream()
+                .filter(x -> "HOAT_DONG".equals(x.trangThai())).toList();
+        if (cacLop.isEmpty() || phongHoatDong.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Cần có lớp đang mở và phòng đang hoạt động để thêm buổi bù.",
+                    "Chưa đủ điều kiện", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        JComboBox<LuaChon> cboLop = new JComboBox<>();
+        for (LopTrungTam x : cacLop)
+            cboLop.addItem(new LuaChon(x.maLop(), x.tenLop() + " · " + x.tenKhoaHoc()));
+        cboLop.setPrototypeDisplayValue(new LuaChon(-1,
+                "Tên lớp học khá dài · Tên khóa học khá dài"));
+        if (tab.lichDaChon != null) chon(cboLop, tab.lichDaChon.maLop());
+        NgayLichHocPicker ngay = new NgayLichHocPicker(LocalDate.now().plusDays(1));
+        JComboBox<CaHocTrungTam.Ca> cboCa = new JComboBox<>(
+                CaHocTrungTam.DANH_SACH.toArray(new CaHocTrungTam.Ca[0]));
+        JComboBox<PhongHoc> cboPhong = new JComboBox<>();
+        cboPhong.addItem(new PhongHoc(0, 0, "", 0, ""));
+        for (PhongHoc p : phongHoatDong) cboPhong.addItem(p);
+        cboPhong.setPrototypeDisplayValue(new PhongHoc(9999, 0,
+                "Tên phòng học khá dài", 99, "HOAT_DONG"));
+        cboPhong.setRenderer(new javax.swing.DefaultListCellRenderer() {
+            @Override public java.awt.Component getListCellRendererComponent(
+                    javax.swing.JList<?> list, Object value, int index,
+                    boolean selected, boolean focused) {
+                super.getListCellRendererComponent(list, value, index, selected, focused);
+                if (value instanceof PhongHoc p && p.maPhong() > 0)
+                    setText(p.tenPhong() + " (" + p.sucChua() + " chỗ) · Hoạt động");
+                return this;
+            }
+        });
+        JTextField ghiChu = new JTextField(30);
+        JPanel form = formBuoi(
+                truongForm("Lớp học", cboLop),
+                truongForm("Ngày học bù", ngay),
+                truongForm("Ca học cố định", cboCa),
+                truongForm("Một phòng học (tên · sức chứa · trạng thái)", cboPhong),
+                truongForm("Ghi chú", ghiChu));
+        while (hienHopThoaiBuoi("THÊM BUỔI HỌC BÙ",
+                "Trùng lớp, giáo viên, phòng và học viên được kiểm tra trước khi ghi SQL", form)) {
+            try {
+                LuaChon lopChon = (LuaChon) cboLop.getSelectedItem();
+                PhongHoc phong = (PhongHoc) cboPhong.getSelectedItem();
+                CaHocTrungTam.Ca ca = (CaHocTrungTam.Ca) cboCa.getSelectedItem();
+                LocalDate ngayHoc = ngay.layNgay();
+                if (lopChon == null || ngayHoc == null || ngayHoc.isBefore(LocalDate.now())
+                        || ca == null || phong == null || phong.maPhong() <= 0)
+                    throw new IllegalArgumentException("Hãy chọn lớp, ngày hiện tại hoặc tương lai, ca và phòng học");
+                String ghiChuLuu = ghiChu.getText().trim();
+                if (ghiChuLuu.length() > 500)
+                    throw new IllegalArgumentException("Ghi chú tối đa 500 ký tự");
+                if (!xacNhanBuoi("Thêm buổi bù "
+                        + NgayLichHocPicker.hienThiNgay(ngayHoc) + ", ca " + ca.soCa()
+                        + " tại " + phong.tenPhong() + " cho " + lopChon.ten() + "?")) return;
+                luuDieuChinhBuoi("Đang kiểm tra trùng và lưu buổi bù...",
+                        "Đã thêm buổi học bù.", () -> controller.themBuoiBu(
+                                lopChon.ma(), phong.maPhong(), ngayHoc, ca.soCa(), ghiChuLuu));
+                return;
+            } catch (IllegalArgumentException ex) {
+                JOptionPane.showMessageDialog(this, ex.getMessage(),
+                        "Dữ liệu chưa hợp lệ", JOptionPane.WARNING_MESSAGE);
+            }
+        }
+    }
+
+    private static LichHocLop timLich(List<LichHocLop> cacLich, int maLich) {
+        return cacLich.stream().filter(x -> x.maLichHoc() == maLich).findFirst().orElse(null);
+    }
+
+    private static LocalDate ngayTiepTheo(LichHocLop lich, LocalDate tuNgay) {
+        if (lich == null) return null;
+        LocalDate ngay = tuNgay.isAfter(lich.tuNgay()) ? tuNgay : lich.tuNgay();
+        while (ngay.getDayOfWeek().getValue() + 1 != lich.thuTrongTuan())
+            ngay = ngay.plusDays(1);
+        if (ngay.equals(LocalDate.now()) && lich.gioBatDau() != null
+                && !LocalTime.now().isBefore(lich.gioBatDau()))
+            ngay = ngay.plusWeeks(1);
+        return lich.denNgay() != null && ngay.isAfter(lich.denNgay()) ? null : ngay;
+    }
+
+    private static JPanel formBuoi(JComponent... truong) {
+        JPanel form = new JPanel();
+        form.setBackground(Color.WHITE);
+        form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
+        form.setBorder(BorderFactory.createEmptyBorder(15, 20, 15, 20));
+        for (JComponent x : truong) {
+            x.setAlignmentX(LEFT_ALIGNMENT);
+            x.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
+            form.add(x);
+            form.add(Box.createVerticalStrut(8));
+        }
+        return form;
+    }
+
+    private boolean hienHopThoaiBuoi(String ten, String phu, JPanel form) {
+        JDialog dialog = cuaSo(ten);
+        JPanel goc = new JPanel(new BorderLayout());
+        goc.setBackground(Color.WHITE);
+        goc.add(tieuDeHopThoai(ten, phu), BorderLayout.NORTH);
+        JScrollPane cuon = new JScrollPane(form,
                 JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
                 JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         cuon.setBorder(BorderFactory.createEmptyBorder());
-        cuon.getVerticalScrollBar().setUnitIncrement(20);
+        cuon.getVerticalScrollBar().setUnitIncrement(18);
         goc.add(cuon, BorderLayout.CENTER);
-        JPanel cuoi = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
-        cuoi.setBackground(Color.WHITE);
+        JPanel nut = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 8));
+        nut.setBackground(Color.WHITE);
         JButton dong = nutHopThoai("Đóng", new Color(0xE8EEEB), CHU_DAM);
-        JButton tiep = nutHopThoai("Chọn buổi", XANH_DAM, Color.WHITE);
-        final LichHocLop[] ketQua = {null};
+        JButton tiepTuc = nutHopThoai("Kiểm tra và tiếp tục", XANH_DAM, Color.WHITE);
+        tiepTuc.setPreferredSize(new Dimension(205, 38));
+        final boolean[] chon = {false};
         dong.addActionListener(e -> dialog.dispose());
-        tiep.addActionListener(e -> {
-            for (int i = 0; i < chon.size(); i++) {
-                if (chon.get(i).isSelected()) {
-                    ketQua[0] = sapXep.get(i);
-                    dialog.dispose();
-                    return;
-                }
-            }
-        });
-        cuoi.add(dong);
-        cuoi.add(tiep);
-        goc.add(cuoi, BorderLayout.SOUTH);
+        tiepTuc.addActionListener(e -> { chon[0] = true; dialog.dispose(); });
+        nut.add(dong);
+        nut.add(tiepTuc);
+        goc.add(nut, BorderLayout.SOUTH);
         dialog.setContentPane(goc);
-        dialog.setSize(590, Math.min(690, 165 + ds.size() * 82));
+        int cao = Math.min(590, java.awt.GraphicsEnvironment
+                .getLocalGraphicsEnvironment().getMaximumWindowBounds().height - 35);
+        dialog.setSize(700, cao);
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
-        return ketQua[0];
+        return chon[0];
     }
 
-    private void xemChiTietThe(List<LichHocLop> ds) {
-        if (ds.isEmpty()) return;
-        LichHocLop dau = ds.get(0);
-        JDialog dialog = cuaSo("Chi tiết lớp học");
-        JPanel goc = new JPanel(new BorderLayout());
-        goc.setBackground(Color.WHITE);
-        goc.add(tieuDeHopThoai("CHI TIẾT LỚP HỌC", "Lịch học định kỳ theo từng buổi"), BorderLayout.NORTH);
-
-        JPanel than = new JPanel(new BorderLayout(0, 14));
-        than.setBackground(Color.WHITE);
-        than.setBorder(BorderFactory.createEmptyBorder(15, 20, 8, 20));
-        JPanel info = new JPanel(new GridLayout(4, 1, 0, 4));
-        info.setBackground(XANH_NHAT);
-        info.setBorder(BorderFactory.createEmptyBorder(14, 16, 14, 16));
-        info.add(dongThongTin("Lớp học", dau.tenLop()));
-        info.add(dongThongTin("Môn học", dau.tenMonHoc()));
-        info.add(dongThongTin("Khóa học", dau.tenKhoaHoc()));
-        info.add(dongThongTin("Số buổi trong lịch", ds.size() + " buổi"));
-        than.add(info, BorderLayout.NORTH);
-
-        JPanel dsBuoi = new JPanel();
-        dsBuoi.setBackground(Color.WHITE);
-        dsBuoi.setLayout(new BoxLayout(dsBuoi, BoxLayout.Y_AXIS));
-        List<LichHocLop> sapXep = new ArrayList<>(ds);
-        sapXep.sort(Comparator.comparingInt(LichHocLop::thuTrongTuan)
-                .thenComparing(LichHocLop::gioBatDau));
-        for (LichHocLop lh : sapXep) {
-            JPanel dong = new JPanel(new BorderLayout(0, 6));
-            dong.setBackground(NEN_NHAT);
-            dong.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(new Color(0xD7E6DD)),
-                    BorderFactory.createEmptyBorder(10, 12, 10, 12)));
-            JLabel thu = new JLabel(LichHocLopService.tenThu(lh.thuTrongTuan())
-                    + "    " + chuoiGio(lh));
-            thu.setForeground(CHU_DAM);
-            thu.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 14));
-            JLabel status = new JLabel("HIEU_LUC".equals(lh.trangThai()) ? "Hiệu lực" : "Đã hủy");
-            status.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
-            status.setForeground("HIEU_LUC".equals(lh.trangThai()) ? XANH_DAM : new Color(0xB94C39));
-            JPanel hang = new JPanel(new BorderLayout());
-            hang.setOpaque(false);
-            hang.add(thu, BorderLayout.WEST);
-            hang.add(status, BorderLayout.EAST);
-            dong.add(hang, BorderLayout.NORTH);
-            JLabel apDung = new JLabel("Thời gian áp dụng: " + ngayHieuLuc(lh));
-            apDung.setForeground(new Color(0x547363));
-            dong.add(apDung, BorderLayout.SOUTH);
-            dong.setAlignmentX(LEFT_ALIGNMENT);
-            dong.setMaximumSize(new Dimension(Integer.MAX_VALUE, 79));
-            dsBuoi.add(dong);
-            dsBuoi.add(Box.createVerticalStrut(8));
-        }
-        JScrollPane cuon = new JScrollPane(dsBuoi,
-                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
-                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        cuon.setBorder(BorderFactory.createTitledBorder("Danh sách buổi học"));
-        cuon.getVerticalScrollBar().setUnitIncrement(20);
-        than.add(cuon, BorderLayout.CENTER);
-        goc.add(than, BorderLayout.CENTER);
-        JPanel cuoi = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 10));
-        cuoi.setBackground(Color.WHITE);
-        JButton dong = nutHopThoai("Đóng", XANH_DAM, Color.WHITE);
-        dong.addActionListener(e -> dialog.dispose());
-        cuoi.add(dong);
-        goc.add(cuoi, BorderLayout.SOUTH);
-        dialog.setContentPane(goc);
-        dialog.setSize(710, Math.min(790, 360 + ds.size() * 78));
-        dialog.setLocationRelativeTo(this);
-        dialog.setVisible(true);
+    private boolean xacNhanBuoi(String noiDung) {
+        return JOptionPane.showConfirmDialog(this,
+                "<html><div style='width:390px'>" + TabTheoMon.esc(noiDung)
+                        + "<br><br>Ngày kết thúc dự kiến sẽ được tính lại khi lưu.</div></html>",
+                "Xác nhận thay đổi buổi học", JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE) == JOptionPane.YES_OPTION;
     }
 
-    private void suaBuoiTrongThe(List<LichHocLop> ds) {
-        LichHocLop x = chonMotBuoi(ds, "Chọn buổi cần sửa");
-        if (x != null) moForm(x);
-    }
-
-    /** Huy mem mot buoi theo trang thai co san, khong xoa ban ghi SQL. */
-    private void huyBuoiTrongThe(List<LichHocLop> ds) {
-        List<LichHocLop> dangHoc = ds.stream()
-                .filter(x -> "HIEU_LUC".equals(x.trangThai())).toList();
-        if (dangHoc.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Lớp này không còn buổi học đang hiệu lực.");
-            return;
-        }
-        LichHocLop x = chonMotBuoi(dangHoc, "Chọn buổi cần hủy");
-        if (x == null) return;
-        if (!xacNhanHuy(x)) return;
-        thongBao.setText("Đang hủy buổi học...");
-        new SwingWorker<Void, Void>() {
-            @Override protected Void doInBackground() throws Exception {
-                controller.sua(x.maLichHoc(), x.thuTrongTuan(), x.gioBatDau(),
-                        x.gioKetThuc(), x.tuNgay(), x.denNgay(), "HUY");
-                return null;
-            }
+    private void luuDieuChinhBuoi(String dangLam, String thanhCong,
+                                  java.util.concurrent.Callable<Integer> ghi) {
+        thongBao.setText(dangLam);
+        new SwingWorker<Integer, Void>() {
+            @Override protected Integer doInBackground() throws Exception { return ghi.call(); }
             @Override protected void done() {
                 try {
                     get();
-                    JOptionPane.showMessageDialog(LichHocLopPanel.this,
-                            "Đã chuyển buổi học sang trạng thái Đã hủy.");
+                    JOptionPane.showMessageDialog(LichHocLopPanel.this, thanhCong);
                     taiDuLieu();
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt(); hienLoi(ex);
@@ -964,21 +1158,21 @@ public final class LichHocLopPanel extends JPanel {
 
     /** Xac nhan huy: khong bao gio xoa dong du lieu; co nut Quay lai ro rang. */
     private boolean xacNhanHuy(LichHocLop lich) {
-        JDialog dialog = cuaSo("Xác nhận hủy buổi học");
+        JDialog dialog = cuaSo("Xác nhận hủy lịch lặp");
         JPanel goc = new JPanel(new BorderLayout());
         goc.setBackground(Color.WHITE);
-        goc.add(tieuDeHopThoai("HỦY BUỔI HỌC", "Vui lòng kiểm tra đúng buổi trước khi xác nhận"), BorderLayout.NORTH);
+        goc.add(tieuDeHopThoai("HỦY LỊCH LẶP", "Kiểm tra đúng thứ và ca trước khi xác nhận"), BorderLayout.NORTH);
         JPanel than = new JPanel(new GridLayout(5, 1, 0, 9));
         than.setBackground(Color.WHITE);
         than.setBorder(BorderFactory.createEmptyBorder(20, 24, 12, 24));
-        JLabel canhBao = new JLabel("Bạn chắc chắn muốn hủy buổi học này?");
+        JLabel canhBao = new JLabel("Hủy lịch lặp từ hôm nay trở đi?");
         canhBao.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
         canhBao.setForeground(new Color(0xB13B32));
         than.add(canhBao);
         than.add(dongThongTin("Lớp", lich.tenLop()));
         than.add(dongThongTin("Buổi", LichHocLopService.tenThu(lich.thuTrongTuan()) + "   " + chuoiGio(lich)));
         than.add(dongThongTin("Áp dụng", ngayHieuLuc(lich)));
-        JLabel note = new JLabel("Buổi chuyển thành Đã hủy; bản ghi vẫn được giữ trong SQL Server.");
+        JLabel note = new JLabel("Các buổi đã có vẫn được giữ; nếu có buổi tương lai, thao tác sẽ bị chặn.");
         note.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
         note.setForeground(new Color(0x66776C));
         than.add(note);
@@ -1000,184 +1194,363 @@ public final class LichHocLopPanel extends JPanel {
         return dongY[0];
     }
 
-    /** Cua so form duoc lam moi, giu nguyen truong va rang buoc validate cu. */
-    private boolean hienFormLich(JPanel form, boolean laThem) {
-        JDialog dialog = cuaSo(laThem ? "Thêm lịch học" : "Sửa buổi học");
+    /** Bieu mau lon dung chung cho Them, Sua tu the lop va click o thoi khoa bieu. */
+    /** Dialog dung chung cho THEM va SUA; nut Huy buoi chi xuat hien khi Sua. */
+    private int hienFormLich(JPanel form, boolean laThem) {
+        JDialog dialog = cuaSo(laThem ? "Thêm lịch học" : "Sửa lịch học");
         JPanel goc = new JPanel(new BorderLayout());
         goc.setBackground(Color.WHITE);
-        goc.add(tieuDeHopThoai(laThem ? "THÊM LỊCH HỌC" : "SỬA BUỔI HỌC",
-                laThem ? "Chọn lớp và các buổi học trong tuần"
-                        : "Điều chỉnh ngày áp dụng, khung giờ và trạng thái của buổi đã chọn"), BorderLayout.NORTH);
-        form.setBackground(Color.WHITE);
+        goc.add(tieuDeHopThoai(laThem ? "THÊM LỊCH HỌC" : "SỬA LỊCH HỌC",
+                "8 ca liên tục 07:00–19:00 (90 phút/ca), không có giờ nghỉ giữa ca"), BorderLayout.NORTH);
         JScrollPane cuon = new JScrollPane(form, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
-                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         cuon.setBorder(BorderFactory.createEmptyBorder());
-        cuon.getVerticalScrollBar().setUnitIncrement(18);
+        cuon.getVerticalScrollBar().setUnitIncrement(25);
+        cuon.getViewport().setBackground(Color.WHITE);
         goc.add(cuon, BorderLayout.CENTER);
-        JPanel cuoi = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 10));
-        cuoi.setBackground(Color.WHITE);
+        JPanel nut = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 9));
+        nut.setBackground(Color.WHITE);
         JButton dong = nutHopThoai("Hủy", new Color(0xE8EEEB), CHU_DAM);
-        JButton luu = nutHopThoai("Lưu thay đổi", XANH_DAM, Color.WHITE);
-        final boolean[] ketQua = {false};
+        JButton luu = nutHopThoai(laThem ? "Lưu lịch học" : "Lưu thay đổi", XANH_DAM, Color.WHITE);
+        final int[] ketQua = {0}; // 0=dong, 1=luu, 2=huy buoi duoc chon
         dong.addActionListener(e -> dialog.dispose());
-        luu.addActionListener(e -> { ketQua[0] = true; dialog.dispose(); });
-        cuoi.add(dong); cuoi.add(luu);
-        goc.add(cuoi, BorderLayout.SOUTH);
+        luu.addActionListener(e -> { ketQua[0] = 1; dialog.dispose(); });
+        if (!laThem) {
+            JButton huyBuoi = nutHopThoai("HỦY LỊCH LẶP", new Color(0xBD3932), Color.WHITE);
+            huyBuoi.addActionListener(e -> { ketQua[0] = 2; dialog.dispose(); });
+            nut.add(huyBuoi);
+        }
+        nut.add(dong);
+        nut.add(luu);
+        goc.add(nut, BorderLayout.SOUTH);
         dialog.setContentPane(goc);
-        dialog.setSize(760, laThem ? 730 : 590);
+        java.awt.Rectangle manHinh = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getMaximumWindowBounds();
+        dialog.setSize(Math.min(1250, manHinh.width - 30),
+                Math.min(720, manHinh.height - 28));
+        dialog.setMinimumSize(new Dimension(Math.min(920, manHinh.width - 30),
+                Math.min(540, manHinh.height - 28)));
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
         return ketQua[0];
     }
 
-    private void moForm(LichHocLop cu) {
+    private static JPanel tieuDeMuc(String text) {
+        JPanel section = new JPanel(new BorderLayout());
+        section.setBackground(XANH_DAM);
+        section.setBorder(BorderFactory.createMatteBorder(0, 0, 5, 0, new Color(0xFFDC00)));
+        JLabel title = new JLabel(text);
+        title.setForeground(Color.WHITE);
+        title.setFont(title.getFont().deriveFont(Font.BOLD, 15f));
+        title.setBorder(BorderFactory.createEmptyBorder(9, 12, 9, 12));
+        section.add(title, BorderLayout.CENTER);
+        return section;
+    }
+
+    private static JPanel truongForm(String nhan, JComponent o) {
+        JPanel p = new JPanel(new BorderLayout(8, 5));
+        p.setOpaque(false);
+        JLabel label = new JLabel(nhan);
+        label.setForeground(CHU_DAM);
+        label.setFont(label.getFont().deriveFont(Font.BOLD, 12f));
+        p.add(label, BorderLayout.NORTH);
+        p.add(o, BorderLayout.CENTER);
+        return p;
+    }
+
+    /** Mo form THEM/SUA cung mot bang ca va bo chon phong; khong co combobox chon buoi. */
+    private void moForm(LichHocLop banDau) {
         TabTheoMon tab = tabDangChon();
         if (tab == null) {
-            JOptionPane.showMessageDialog(this, "Chưa có môn học Trung tâm"); return;
+            JOptionPane.showMessageDialog(this, "Chưa có dữ liệu lớp Trung tâm");
+            return;
         }
-        // Khong lay danh sach tu ID hardcode. Du lieu loc va form theo dung tab.
+        boolean laThem = banDau == null;
         JComboBox<LuaChon> cboKhoa = new JComboBox<>();
-        for (KhoaHoc k : tab.khoa) {
-            if (k.trangThai() || (cu != null && cu.maKhoaHoc() == k.maKhoaHoc()))
+        for (KhoaHoc k : tab.khoa)
+            if (k.trangThai() || (banDau != null && banDau.maKhoaHoc() == k.maKhoaHoc()))
                 cboKhoa.addItem(new LuaChon(k.maKhoaHoc(), k.tenKhoaHoc()));
-        }
         if (cboKhoa.getItemCount() == 0) {
-            JOptionPane.showMessageDialog(this,
-                    "Môn học này chưa có khóa học đang hoạt động.\n"
-                    + "Hãy vào Quản lý Khóa học tạo hoặc bật khóa trước khi thêm lịch.");
+            JOptionPane.showMessageDialog(this, "Chưa có khóa học Trung tâm để lập lịch.");
             return;
         }
-        if (cu == null && tab.lop.stream().noneMatch(l ->
-                !"DA_DONG".equals(l.trangThai()) && tab.khoa.stream().anyMatch(k ->
-                k.maKhoaHoc() == l.maKhoaHoc() && k.trangThai()))) {
-            JOptionPane.showMessageDialog(this,
-                    "Môn này chưa có lớp đang sử dụng thuộc khóa học hoạt động.\n"
-                    + "Hãy vào Quản lý Lớp Trung tâm tạo lớp trước khi thêm lịch.");
-            return;
-        }
-        int maKhoaMacDinh = cu == null ? tab.maKhoaDangLoc() : cu.maKhoaHoc();
-        chon(cboKhoa, maKhoaMacDinh);
+        chon(cboKhoa, laThem ? tab.maKhoaDangLoc() : banDau.maKhoaHoc());
         JComboBox<LuaChon> cboLop = new JComboBox<>();
         Runnable napLop = () -> {
             LuaChon khoa = (LuaChon) cboKhoa.getSelectedItem();
-            int maKhoa = khoa == null ? -1 : khoa.ma();
             cboLop.removeAllItems();
-            for (LopTrungTam l : tab.lop) {
-                if (l.maKhoaHoc() != maKhoa) continue;
-                // Lop dong chi co the hien thi de sua lich cu.
-                if (!"DA_DONG".equals(l.trangThai()) ||
-                        (cu != null && cu.maLop() == l.maLop()))
-                    cboLop.addItem(new LuaChon(l.maLop(), l.tenLop()));
-            }
+            for (LopTrungTam lop : tab.lop)
+                if (khoa != null && lop.maKhoaHoc() == khoa.ma()
+                        && (!"DA_DONG".equals(lop.trangThai()) ||
+                           (banDau != null && banDau.maLop() == lop.maLop())))
+                    cboLop.addItem(new LuaChon(lop.maLop(), lop.tenLop()));
         };
         napLop.run();
-        // Neu khoa dang loc chua co lop, tu chon khoa khac co lop de form Them khong bi rong.
-        if (cu == null && cboLop.getItemCount() == 0) {
+        if (laThem && cboLop.getItemCount() == 0) {
             for (int i = 0; i < cboKhoa.getItemCount(); i++) {
                 cboKhoa.setSelectedIndex(i);
                 napLop.run();
                 if (cboLop.getItemCount() > 0) break;
             }
         }
-        if (cu == null) chon(cboLop, tab.maLopDangLoc());
-        else chon(cboLop, cu.maLop());
+        if (cboLop.getItemCount() == 0) {
+            JOptionPane.showMessageDialog(this, "Chưa có lớp phù hợp. Hãy tạo lớp trước.");
+            return;
+        }
+        chon(cboLop, laThem ? tab.maLopDangLoc() : banDau.maLop());
         cboKhoa.addActionListener(e -> napLop.run());
-        if (cu != null) {
-            cboKhoa.setEnabled(false);
-            cboLop.setEnabled(false);
-        }
-        // Khi Them: chọn nhiều thứ, mỗi thứ có giờ riêng. Khi Sửa: chỉ sửa một thứ.
-        JComboBox<String> cboThu = null;
-        JTextField txtBatDau = null;
-        JTextField txtKetThuc = null;
-        JCheckBox[] chonThu = new JCheckBox[7];
-        JTextField[] gioDauTheoThu = new JTextField[7];
-        JTextField[] gioCuoiTheoThu = new JTextField[7];
-        JScrollPane bangBuoi = null;
-        if (cu == null) {
-            JPanel cacNgay = new JPanel(new GridLayout(0, 1, 3, 3));
-            for (int i = 0; i < 7; i++) {
-                int thu = i + 2;
-                JCheckBox ck = new JCheckBox(LichHocLopService.tenThu(thu));
-                chonThu[i] = ck;
-                JTextField bd = new JTextField("08:00", 5);
-                JTextField kt = new JTextField("09:30", 5);
-                gioDauTheoThu[i] = bd;
-                gioCuoiTheoThu[i] = kt;
-                JPanel dong = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-                dong.add(ck);
-                dong.add(new JLabel("Từ")); dong.add(bd);
-                dong.add(new JLabel("đến")); dong.add(kt);
-                cacNgay.add(dong);
-            }
-            bangBuoi = new JScrollPane(cacNgay);
-            bangBuoi.setPreferredSize(new Dimension(340, 220));
-        } else {
-            cboThu = new JComboBox<>(new String[]{
-                    "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"
-            });
-            cboThu.setSelectedIndex(cu.thuTrongTuan() - 2);
-            txtBatDau = new JTextField(hienThiGio(cu.gioBatDau()), 10);
-            txtKetThuc = new JTextField(hienThiGio(cu.gioKetThuc()), 10);
-        }
-        NgayLichHocPicker tuNgay = new NgayLichHocPicker(cu == null ? LocalDate.now() : cu.tuNgay());
-        NgayLichHocPicker denNgay = new NgayLichHocPicker(cu == null ? null : cu.denNgay());
-        JComboBox<String> cboTrangThai = new JComboBox<>(new String[]{"Hiệu lực", "Đã hủy"});
-        if (cu != null && "HUY".equals(cu.trangThai())) cboTrangThai.setSelectedIndex(1);
+        cboKhoa.setEnabled(laThem);
+        cboLop.setEnabled(laThem);
+        JTextArea giaoVienLop = new JTextArea("Chưa phân công", 2, 20);
+        giaoVienLop.setEditable(false);
+        giaoVienLop.setFocusable(false);
+        giaoVienLop.setLineWrap(true);
+        giaoVienLop.setWrapStyleWord(true);
+        giaoVienLop.setFont(new JLabel().getFont().deriveFont(Font.PLAIN, 13f));
+        giaoVienLop.setForeground(CHU_DAM);
+        giaoVienLop.setBackground(new Color(0xF3F8F4));
+        giaoVienLop.setBorder(BorderFactory.createEmptyBorder(5, 7, 5, 7));
+        giaoVienLop.setToolTipText("Giáo viên hiện gắn với lớp; chuyển giáo viên được quản lý tại Lớp học.");
+        Runnable napGiaoVien = () -> {
+            LuaChon chonLop = (LuaChon) cboLop.getSelectedItem();
+            LopTrungTam lopChon = chonLop == null ? null : tab.lop.stream()
+                    .filter(l -> l.maLop() == chonLop.ma()).findFirst().orElse(null);
+            String tenGiaoVien = lopChon == null || lopChon.tenGiaoVien() == null
+                    ? "Chưa phân công" : lopChon.tenGiaoVien();
+            giaoVienLop.setText(tenGiaoVien);
+            giaoVienLop.setCaretPosition(0);
+            giaoVienLop.setToolTipText(tenGiaoVien + " · Chuyển giáo viên tại màn hình Lớp học");
+        };
+        cboLop.addActionListener(e -> napGiaoVien.run());
+        napGiaoVien.run();
+        JPanel tenLop = new JPanel(new GridLayout(1, 3, 18, 0));
+        tenLop.setOpaque(false);
+        tenLop.setPreferredSize(new Dimension(1155, 60));
+        tenLop.add(truongForm("Khóa học (*)", cboKhoa));
+        tenLop.add(truongForm("Lớp học (*)", cboLop));
+        tenLop.add(truongForm("Giáo viên lớp", giaoVienLop));
 
-        // GridBagLayout giu combo box cao 30px, khong keo gian theo bang 7 thu.
-        JPanel form = new JPanel(new GridBagLayout());
-        form.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        cboKhoa.setPreferredSize(new Dimension(320, 30));
-        cboLop.setPreferredSize(new Dimension(320, 30));
-        cboTrangThai.setPreferredSize(new Dimension(320, 30));
-        int hang = 0;
-        themDongForm(form, hang++, "Khóa học (*)", cboKhoa);
-        themDongForm(form, hang++, "Lớp học (*)", cboLop);
-        if (cu == null) {
-            bangBuoi.setPreferredSize(new Dimension(405, 218));
-            themDongForm(form, hang++, "Chọn các thứ học (có thể nhiều thứ)", bangBuoi);
-        } else {
-            cboThu.setPreferredSize(new Dimension(320, 30));
-            themDongForm(form, hang++, "Thứ trong tuần (*)", cboThu);
-            themDongForm(form, hang++, "Giờ bắt đầu (HH:mm)", txtBatDau);
-            themDongForm(form, hang++, "Giờ kết thúc (HH:mm)", txtKetThuc);
+        List<LichHocLop> buoiCuaLop = laThem ? List.of() : tatCaLich.stream()
+                .filter(x -> x.maLop() == banDau.maLop())
+                .sorted(Comparator.comparingInt(LichHocLop::thuTrongTuan)
+                        .thenComparing(LichHocLop::gioBatDau,
+                                Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        if (!laThem && buoiCuaLop.stream().noneMatch(x -> x.maLichHoc() == banDau.maLichHoc())) {
+            List<LichHocLop> all = new ArrayList<>(buoiCuaLop);
+            all.add(banDau);
+            buoiCuaLop = List.copyOf(all);
         }
-        themDongForm(form, hang++, "Từ ngày (*)", tuNgay);
-        themDongForm(form, hang++, "Đến ngày (có thể bỏ trống)", denNgay);
-        themDongForm(form, hang++, "Trạng thái", cboTrangThai);
+        BangChonCaHocPanel bangCa = new BangChonCaHocPanel(!laThem);
+        ChonPhongHocPanel chonPhong = new ChonPhongHocPanel(danhSachPhong);
+        NgayLichHocPicker tuNgay = new NgayLichHocPicker(laThem ? LocalDate.now()
+                : LichHocLopService.ngaySuaMacDinh(banDau.tuNgay(), LocalDate.now()));
+        NgayLichHocPicker denNgay = new NgayLichHocPicker(laThem ? null : banDau.denNgay());
+        JComboBox<String> cboTrangThai = new JComboBox<>(new String[]{"Hiệu lực", "Đã hủy"});
+        JLabel dangGan = new JLabel("Chọn một ô ca học");
+        dangGan.setForeground(new Color(0x126238));
+        dangGan.setFont(dangGan.getFont().deriveFont(Font.BOLD, 12f));
+        JLabel soCaDaChon = new JLabel("Đã chọn 0 ca · đã gán phòng 0/0");
+        soCaDaChon.setForeground(CHU_DAM);
+        JLabel cachGanPhong = new JLabel("Mỗi ô ca chọn đúng một phòng");
+        cachGanPhong.setForeground(new Color(0x6B5A23));
+        final Map<BangChonCaHocPanel.OCa, Integer> phongTheoBuoi = new LinkedHashMap<>();
+        final LichHocLop[] banGhi = {banDau};
+        Runnable capNhatSoCa = () -> {
+            if (!laThem) return;
+            List<BangChonCaHocPanel.OCa> cacO = bangCa.layCacO();
+            phongTheoBuoi.keySet().retainAll(cacO);
+            long daGan = cacO.stream().filter(o -> phongTheoBuoi.get(o) != null).count();
+            soCaDaChon.setText("Đã chọn " + cacO.size() + " ca · đã gán phòng "
+                    + daGan + "/" + cacO.size());
+        };
+
+        // Khi sua: bam o DA TICH de chuyen buoi, phong va ngay phai theo DUNG ban ghi.
+        // Khi them: moi o co mot phong, cac o khac co the dung phong khac.
+        bangCa.datKhiChon(cell -> {
+            if (laThem) {
+                chonPhong.chonPhong(cell == null ? null : phongTheoBuoi.get(cell));
+            } else {
+                LichHocLop moi = bangCa.layBanGhiDangSua();
+                if (moi != null && moi != banGhi[0]) {
+                    banGhi[0] = moi;
+                    chonPhong.chonPhong(moi.maPhong());
+                    tuNgay.datNgay(LichHocLopService.ngaySuaMacDinh(
+                            moi.tuNgay(), LocalDate.now()));
+                    denNgay.datNgay(moi.denNgay());
+                    cboTrangThai.setSelectedIndex("HUY".equals(moi.trangThai()) ? 1 : 0);
+                }
+            }
+            dangGan.setText(cell == null ? "Chọn một ô ca học"
+                    : LichHocLopService.tenThu(cell.thu()) + " – Ca " + cell.soCa());
+            capNhatSoCa.run();
+        });
+        chonPhong.datKhiChon(phong -> {
+            if (laThem && bangCa.layODangChon() != null
+                    && bangCa.layCacO().contains(bangCa.layODangChon()))
+                phongTheoBuoi.put(bangCa.layODangChon(), phong == null ? null : phong.maPhong());
+            capNhatSoCa.run();
+        });
+        if (!laThem) {
+            bangCa.datBuoiDangSua(banDau, buoiCuaLop);
+            chonPhong.chonPhong(banDau.maPhong());
+            cboTrangThai.setSelectedIndex("HUY".equals(banDau.trangThai()) ? 1 : 0);
+        }
+
+        JPanel benTrai = new JPanel(new BorderLayout(0, 8));
+        benTrai.setOpaque(false);
+        benTrai.add(tieuDeMuc("1. CHỌN THỨ VÀ CA HỌC"), BorderLayout.NORTH);
+        JPanel gridVaCu = new JPanel(new BorderLayout(0, 5));
+        gridVaCu.setOpaque(false);
+        gridVaCu.add(bangCa, BorderLayout.CENTER);
+        if (!laThem) {
+            // Lich cu ngoai 8 ca khong the danh dau sai vao bang. Cho chon ban ghi
+            // truc tiep bang nut nho de doi thu/ca; KHONG dung combo chon buoi.
+            List<LichHocLop> cu = buoiCuaLop.stream()
+                    .filter(x -> "HIEU_LUC".equals(x.trangThai())
+                            && CaHocTrungTam.timTheoGio(x.gioBatDau(), x.gioKetThuc()).isEmpty())
+                    .toList();
+            if (!cu.isEmpty()) {
+                JPanel lichCu = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 1));
+                lichCu.setOpaque(false);
+                lichCu.add(new JLabel("Lịch cũ cần đổi ca:"));
+                for (LichHocLop x : cu) {
+                    JButton b = new JButton(LichHocLopService.tenThu(x.thuTrongTuan())
+                            + " " + chuoiGio(x));
+                    b.addActionListener(e -> {
+                        bangCa.chonBuoiGoc(x);
+                        banGhi[0] = x;
+                        chonPhong.chonPhong(x.maPhong());
+                        tuNgay.datNgay(LichHocLopService.ngaySuaMacDinh(
+                                x.tuNgay(), LocalDate.now()));
+                        denNgay.datNgay(x.denNgay());
+                        cboTrangThai.setSelectedIndex("HUY".equals(x.trangThai()) ? 1 : 0);
+                    });
+                    lichCu.add(b);
+                }
+                gridVaCu.add(lichCu, BorderLayout.SOUTH);
+            }
+        }
+        benTrai.add(gridVaCu, BorderLayout.CENTER);
+
+        JPanel benPhai = new JPanel(new BorderLayout(0, 7));
+        benPhai.setOpaque(false);
+        benPhai.add(tieuDeMuc("2. CHỌN PHÒNG HỌC"), BorderLayout.NORTH);
+        JPanel phong = new JPanel(new BorderLayout(0, 6));
+        phong.setOpaque(false);
+        JPanel huongDan = new JPanel(new GridLayout(0, 1, 0, 3));
+        huongDan.setOpaque(false);
+        if (laThem) huongDan.add(soCaDaChon);
+        huongDan.add(dangGan);
+        huongDan.add(cachGanPhong);
+        phong.add(huongDan, BorderLayout.NORTH);
+        JScrollPane cuonPhong = new JScrollPane(chonPhong,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        cuonPhong.setBorder(BorderFactory.createEmptyBorder());
+        cuonPhong.getVerticalScrollBar().setUnitIncrement(20);
+        phong.add(cuonPhong, BorderLayout.CENTER);
+        benPhai.add(phong, BorderLayout.CENTER);
+
+        JPanel hangChon = new JPanel(new GridBagLayout());
+        hangChon.setOpaque(false);
+        GridBagConstraints g = new GridBagConstraints();
+        g.gridy = 0; g.fill = GridBagConstraints.BOTH; g.weighty = 1;
+        g.gridx = 0; g.weightx = .67; g.insets = new Insets(0, 0, 0, 12);
+        hangChon.add(benTrai, g);
+        g.gridx = 1; g.weightx = .33; g.insets = new Insets(0, 0, 0, 0);
+        hangChon.add(benPhai, g);
+        hangChon.setPreferredSize(new Dimension(1155, 410));
+
+        JPanel duoi = new JPanel(new BorderLayout(0, 9));
+        duoi.setOpaque(false);
+        duoi.add(tieuDeMuc("3. THỜI GIAN ÁP DỤNG"), BorderLayout.NORTH);
+        JPanel dateRow = new JPanel(new GridLayout(1, 3, 14, 0));
+        dateRow.setOpaque(false);
+        dateRow.add(truongForm("Từ ngày (*)", tuNgay));
+        dateRow.add(truongForm("Đến ngày (tùy chọn)", denNgay));
+        dateRow.add(truongForm("Trạng thái", cboTrangThai));
+        duoi.add(dateRow, BorderLayout.CENTER);
+        if (!laThem) {
+            JLabel luuY = new JLabel("Đổi lịch đã bắt đầu: chọn Từ ngày mới từ hôm nay trở đi; "
+                    + "lịch cũ được giữ đến ngày trước đó.");
+            luuY.setForeground(new Color(0x6B5A23));
+            duoi.add(luuY, BorderLayout.SOUTH);
+        }
+
+        JPanel form = new JPanel(new BorderLayout(0, 15));
+        form.setBorder(BorderFactory.createEmptyBorder(16, 17, 13, 17));
+        form.setBackground(Color.WHITE);
+        JPanel dauForm = new JPanel(new BorderLayout(0, 15));
+        dauForm.setOpaque(false);
+        dauForm.add(tenLop, BorderLayout.NORTH);
+        dauForm.add(hangChon, BorderLayout.CENTER);
+        form.add(dauForm, BorderLayout.CENTER);
+        form.add(duoi, BorderLayout.SOUTH);
+        form.setPreferredSize(new Dimension(1198, 600));
 
         while (true) {
-            if (!hienFormLich(form, cu == null)) return;
+            int hanhDong = hienFormLich(form, laThem);
+            if (hanhDong == 0) return;
+            if (hanhDong == 2) {
+                LichHocLop x = bangCa.layBanGhiDangSua();
+                if (x == null || "HUY".equals(x.trangThai())) {
+                    JOptionPane.showMessageDialog(this, "Hãy chọn một buổi đang hiệu lực để hủy.");
+                    continue;
+                }
+                if (xacNhanHuy(x)) { huyMotBuoi(x); return; }
+                continue;
+            }
             try {
                 LuaChon lop = (LuaChon) cboLop.getSelectedItem();
                 if (lop == null) throw new IllegalArgumentException("Hãy chọn lớp học còn hoạt động");
                 String trangThai = cboTrangThai.getSelectedIndex() == 0 ? "HIEU_LUC" : "HUY";
-                LuaChon khoa = (LuaChon) cboKhoa.getSelectedItem();
-                if (cu == null) {
-                    List<BuoiTrongTuan> ds = new ArrayList<>();
-                    for (int i = 0; i < 7; i++) {
-                        if (!chonThu[i].isSelected()) continue;
-                        LocalTime bd = docGio(gioDauTheoThu[i].getText(),
-                                "Giờ bắt đầu " + LichHocLopService.tenThu(i + 2));
-                        LocalTime kt = docGio(gioCuoiTheoThu[i].getText(),
-                                "Giờ kết thúc " + LichHocLopService.tenThu(i + 2));
-                        LichHocLopService.kiemTra(i + 2, bd, kt,
-                                tuNgay.layNgay(), denNgay.layNgay(), trangThai);
-                        ds.add(new BuoiTrongTuan(i + 2, bd, kt));
+                if (laThem) {
+                    List<BuoiCoPhong> ds = bangCa.layCacO().stream()
+                            .map(o -> new BuoiCoPhong(o.buoi(), phongTheoBuoi.get(o))).toList();
+                    if (ds.isEmpty()) throw new IllegalArgumentException("Hãy chọn ít nhất một ô thứ/ca");
+                    LopTrungTam lopChon = tab.lop.stream()
+                            .filter(l -> l.maLop() == lop.ma()).findFirst().orElse(null);
+                    int siSoCanThiet = lopChon == null ? 0
+                            : Math.max(Math.max(lopChon.siSoHienTai(), lopChon.siSoDaDat()),
+                                    lopChon.siSoToiDa() == null ? 0 : lopChon.siSoToiDa());
+                    for (BuoiCoPhong b : ds) {
+                        LichHocLopService.kiemTra(b.buoi().thu(), b.buoi().batDau(),
+                                b.buoi().ketThuc(), tuNgay.layNgay(), denNgay.layNgay(), trangThai);
+                        if ("HIEU_LUC".equals(trangThai)) {
+                            String ca = LichHocLopService.tenThu(b.buoi().thu())
+                                    + " – " + b.buoi().batDau();
+                            PhongHoc phongChon = danhSachPhong.stream()
+                                    .filter(p -> b.maPhong() != null && p.maPhong() == b.maPhong())
+                                    .findFirst().orElse(null);
+                            if (phongChon == null)
+                                throw new IllegalArgumentException("Chưa chọn phòng cho " + ca);
+                            if (!"HOAT_DONG".equals(phongChon.trangThai()))
+                                throw new IllegalArgumentException("Phòng " + phongChon.tenPhong()
+                                        + " không hoạt động ở " + ca);
+                            if (phongChon.sucChua() < siSoCanThiet)
+                                throw new IllegalArgumentException("Phòng " + phongChon.tenPhong()
+                                        + " chỉ có " + phongChon.sucChua() + " chỗ; lớp cần "
+                                        + siSoCanThiet + " chỗ ở " + ca);
+                        }
                     }
-                    if (ds.isEmpty()) throw new IllegalArgumentException(
-                            "Hãy đánh dấu ít nhất một thứ học (Thứ 2 đến Chủ nhật)");
-                    luuNhieuBuoi(lop.ma(), ds,
-                            tuNgay.layNgay(), denNgay.layNgay(), trangThai);
+                    luuNhieuBuoiTheoPhong(lop.ma(), ds, tuNgay.layNgay(),
+                            denNgay.layNgay(), trangThai);
                 } else {
-                    int thu = cboThu.getSelectedIndex() + 2;
-                    LocalTime gioDau = docGio(txtBatDau.getText(), "Giờ bắt đầu");
-                    LocalTime gioCuoi = docGio(txtKetThuc.getText(), "Giờ kết thúc");
-                    LichHocLopService.kiemTra(thu, gioDau, gioCuoi,
+                    LichHocLop goc = bangCa.layBanGhiDangSua();
+                    if (goc == null)
+                        throw new IllegalArgumentException("Hãy chọn lịch cũ cần thay đổi");
+                    BuoiTrongTuan moi = bangCa.layBuoiDangSua();
+                    PhongHoc phongChon = chonPhong.layPhong();
+                    Integer maPhong = phongChon == null ? null : phongChon.maPhong();
+                    if ("HIEU_LUC".equals(trangThai) && (phongChon == null
+                            || !"HOAT_DONG".equals(phongChon.trangThai())))
+                        throw new IllegalArgumentException("Hãy chọn phòng đang hoạt động cho buổi này");
+                    LichHocLopService.kiemTraNgaySua(goc.tuNgay(), goc.denNgay(),
+                            tuNgay.layNgay(), LocalDate.now());
+                    LichHocLopService.kiemTra(moi.thu(), moi.batDau(), moi.ketThuc(),
                             tuNgay.layNgay(), denNgay.layNgay(), trangThai);
-                    luuDuLieu(cu, lop.ma(), thu, gioDau, gioCuoi,
-                            tuNgay.layNgay(), denNgay.layNgay(), trangThai);
+                    luuDuLieu(goc, lop.ma(), maPhong, moi.thu(), moi.batDau(),
+                            moi.ketThuc(), tuNgay.layNgay(), denNgay.layNgay(), trangThai);
                 }
                 return;
             } catch (IllegalArgumentException ex) {
@@ -1187,53 +1560,25 @@ public final class LichHocLopPanel extends JPanel {
         }
     }
 
-    // Canh hang nhan va o nhap, khong de cac o cao bang khung chon thu.
-    private static void themDongForm(JPanel form, int hang, String nhan, JComponent oNhap) {
-        GridBagConstraints g = new GridBagConstraints();
-        g.insets = new Insets(5, 6, 5, 6);
-        g.gridy = hang;
-        g.gridx = 0;
-        g.weightx = 0;
-        g.weighty = 0;
-        g.anchor = GridBagConstraints.WEST;
-        form.add(new JLabel(nhan), g);
-
-        g.gridx = 1;
-        g.weightx = 1;
-        g.fill = GridBagConstraints.HORIZONTAL;
-        // O nhap va khung chon thu chi chiem chieu cao preferredSize.
-        form.add(oNhap, g);
-    }
-
-    private static LocalTime docGio(String chuoi, String truong) {
-        if (chuoi == null || chuoi.isBlank()) return null;
-        try {
-            // Chi nhan HH:mm de khong chen gia tri ngoai y muon vao SQL TIME(0).
-            if (!chuoi.trim().matches("[0-2][0-9]:[0-5][0-9]"))
-                throw new DateTimeParseException("Sai dinh dang", chuoi, 0);
-            return LocalTime.parse(chuoi.trim(), DINH_DANG_GIO);
-        } catch (DateTimeParseException ex) {
-            throw new IllegalArgumentException(truong + " phải theo định dạng HH:mm, ví dụ 08:00");
-        }
-    }
-    private static String hienThiGio(LocalTime gio) {
-        return gio == null ? "" : gio.format(DINH_DANG_GIO);
-    }
-
-    private void luuNhieuBuoi(int maLop,
-                               List<BuoiTrongTuan> cacBuoi, LocalDate ngayTu,
-                               LocalDate ngayDen, String trangThai) {
-        thongBao.setText("Đang lưu " + cacBuoi.size() + " thứ học...");
-        new SwingWorker<List<Integer>, Void>() {
-            @Override protected List<Integer> doInBackground() throws Exception {
-                return controller.themNhieu(maLop, cacBuoi, ngayTu, ngayDen, trangThai);
+    /** Chi huy trang thai, giu ban ghi va lich su; repository se chan lich da dien ra. */
+    private void huyMotBuoi(LichHocLop x) {
+        thongBao.setText("Đang hủy buổi học...");
+        new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                LocalDate homNay = LocalDate.now();
+                if (x.denNgay() != null && x.denNgay().isBefore(homNay))
+                    throw new IllegalArgumentException("Lịch đã kết thúc; không hủy lịch sử");
+                if (x.tuNgay().isBefore(homNay))
+                    controller.suaTuNgay(x.maLichHoc(), x.maPhong(), x.thuTrongTuan(),
+                            x.gioBatDau(), x.gioKetThuc(), homNay, x.denNgay(), "HUY");
+                else controller.sua(x.maLichHoc(), x.maPhong(), x.thuTrongTuan(), x.gioBatDau(),
+                        x.gioKetThuc(), x.tuNgay(), x.denNgay(), "HUY");
+                return null;
             }
             @Override protected void done() {
                 try {
-                    int soBuoi = get().size();
-                    JOptionPane.showMessageDialog(LichHocLopPanel.this,
-                            "Đã thêm thành công " + soBuoi + " thứ học trong tuần.\n"
-                            + "Mỗi thứ được lưu thành một dòng lịch cho cùng lớp.");
+                    get();
+                    JOptionPane.showMessageDialog(LichHocLopPanel.this, "Đã hủy buổi học được chọn.");
                     taiDuLieu();
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt(); hienLoi(ex);
@@ -1242,17 +1587,48 @@ public final class LichHocLopPanel extends JPanel {
         }.execute();
     }
 
-    private void luuDuLieu(LichHocLop cu, int maLop,
+    private static String hienThiGio(LocalTime gio) {
+        return gio == null ? "" : gio.format(DINH_DANG_GIO);
+    }
+
+    /** Them nhieu o, moi o co phong rieng; backend luu atomic. */
+    private void luuNhieuBuoiTheoPhong(int maLop, List<BuoiCoPhong> cacBuoi,
+                                      LocalDate ngayTu, LocalDate ngayDen, String trangThai) {
+        thongBao.setText("Đang lưu " + cacBuoi.size() + " buổi học...");
+        new SwingWorker<List<Integer>, Void>() {
+            @Override protected List<Integer> doInBackground() throws Exception {
+                return controller.themNhieuTheoPhong(maLop, cacBuoi, ngayTu, ngayDen, trangThai);
+            }
+            @Override protected void done() {
+                try {
+                    JOptionPane.showMessageDialog(LichHocLopPanel.this,
+                            "Đã thêm thành công " + get().size() + " buổi học.");
+                    taiDuLieu();
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt(); hienLoi(ex);
+                } catch (ExecutionException ex) { hienLoi(ex); }
+            }
+        }.execute();
+    }
+
+    private void luuDuLieu(LichHocLop cu, int maLop, Integer maPhong,
                           int thu, LocalTime gioDau, LocalTime gioCuoi,
                           LocalDate ngayTu, LocalDate ngayDen, String trangThai) {
         thongBao.setText("Đang lưu lịch học...");
         new SwingWorker<String, Void>() {
             @Override protected String doInBackground() throws Exception {
                 if (cu == null) {
-                    controller.them(maLop, thu, gioDau, gioCuoi, ngayTu, ngayDen, trangThai);
+                    controller.them(maLop, maPhong, thu, gioDau, gioCuoi, ngayTu, ngayDen, trangThai);
                     return "Đã thêm lịch học Trung tâm";
                 }
-                controller.sua(cu.maLichHoc(), thu, gioDau, gioCuoi, ngayTu, ngayDen, trangThai);
+                if (ngayTu.isAfter(cu.tuNgay())) {
+                    controller.suaTuNgay(cu.maLichHoc(), maPhong, thu,
+                            gioDau, gioCuoi, ngayTu, ngayDen, trangThai);
+                    return "Đã giữ lịch cũ và áp dụng lịch mới từ "
+                            + NgayLichHocPicker.hienThiNgay(ngayTu);
+                }
+                controller.sua(cu.maLichHoc(), maPhong, thu, gioDau, gioCuoi,
+                        ngayTu, ngayDen, trangThai);
                 return "Đã cập nhật lịch học Trung tâm";
             }
             @Override protected void done() {

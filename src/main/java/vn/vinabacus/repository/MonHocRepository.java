@@ -71,9 +71,14 @@ public final class MonHocRepository {
     public void sua(int maCoSo, int maMonHoc, String ten, String ghiChu, boolean trangThai)
             throws SQLException {
         String sql = """
-                UPDATE dbo.MonHoc
+                UPDATE m
                    SET TenMonHoc = ?, GhiChu = ?, TrangThai = ?
-                 WHERE MaMonHoc = ? AND MaCoSo = ?
+                FROM dbo.MonHoc m
+                WHERE m.MaMonHoc = ? AND m.MaCoSo = ?
+                  AND (? = 1 OR NOT EXISTS (
+                      SELECT 1 FROM dbo.KhoaHoc k WITH (HOLDLOCK)
+                      WHERE k.MaMonHoc = m.MaMonHoc AND k.MaCoSo = m.MaCoSo
+                        AND k.TrangThai = 1))
                 """;
         try (Connection con = Database.moKetNoi();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -82,8 +87,10 @@ public final class MonHocRepository {
             ps.setBoolean(3, trangThai);
             ps.setInt(4, maMonHoc);
             ps.setInt(5, maCoSo);
+            ps.setBoolean(6, trangThai);
             if (ps.executeUpdate() != 1) {
-                throw new SQLException("Khong tim thay mon hoc thuoc Trung tam de cap nhat");
+                throw new SQLException("Không thể cập nhật môn: môn không thuộc Trung tâm "
+                        + "hoặc vẫn có khóa đang tuyển sinh. Hãy ngừng tuyển sinh các khóa trước.");
             }
         }
     }

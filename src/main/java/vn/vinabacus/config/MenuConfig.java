@@ -24,6 +24,7 @@ public final class MenuConfig {
             m("tt-diem-danh", "Điểm danh", "ĐÀO TẠO", "check"),
             m("tt-hoc-phi", "Học phí", "TÀI CHÍNH", "money"),
             m("tt-phieu-thu", "Phiếu thu", "TÀI CHÍNH", "money"),
+            m("tt-giam-gia", "Chương trình giảm giá", "TÀI CHÍNH", "money"),
             m("tt-nhan-su", "Nhân sự / Giáo viên", "VẬN HÀNH", "people"),
             m("tt-kho", "Kho - Dụng cụ", "VẬN HÀNH", "warehouse"),
             m("tt-bao-cao", "Báo cáo", "VẬN HÀNH", "chart"),

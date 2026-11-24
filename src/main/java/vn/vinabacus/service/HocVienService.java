@@ -15,7 +15,9 @@ public final class HocVienService {
     }
     public void sua(CoSo coSo,HocVien h)throws SQLException{
         int id=maCoSo(coSo);kiemTra(h);
-        if(!repository.sua(saoChep(h,h.maHocVien(),id)))throw new SQLException("Không sửa được học viên thuộc cơ sở này");
+        HocVien duLieu=saoChep(h,h.maHocVien(),id);
+        if (coSo==CoSo.TRUNG_TAM) repository.suaTrungTam(duLieu);
+        else if(!repository.sua(duLieu))throw new SQLException("Không sửa được học viên thuộc cơ sở này");
     }
     private void kiemTra(HocVien h){
         if(h.hoTen()==null||h.hoTen().isBlank())throw new IllegalArgumentException("Bạn chưa nhập họ tên học viên");

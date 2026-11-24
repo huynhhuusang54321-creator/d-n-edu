@@ -15,8 +15,9 @@ import vn.vinabacus.repository.MamNonRepository.LuaChon;
 public final class LopMamNonPanel extends JPanel {
     private final MamNonController ctrl=new MamNonController();
     private final JComboBox<NamHocMamNon> cboYear=new JComboBox<>();
+    private final JComboBox<String> cboKhoi=new JComboBox<>(new String[]{"Tất cả khối","Mầm","Chồi","Lá"});
     private final JTextField search=new JTextField(18);
-    private final DefaultTableModel m=MamNonUi.model("Mã lớp","Tên lớp","Năm học","Trạng thái");
+    private final DefaultTableModel m=MamNonUi.model("Mã lớp","Tên lớp","Năm học","Khối","Sĩ số","Tối đa","Trạng thái");
     private final JTable table=MamNonUi.bang(m);
     private final JLabel status=new JLabel("Sẵn sàng");
     private List<LopMamNon> data=List.of();
@@ -25,16 +26,16 @@ public final class LopMamNonPanel extends JPanel {
     public LopMamNonPanel(){
         super(new BorderLayout(8,8));setBorder(BorderFactory.createEmptyBorder(15,15,15,15));
         JButton refresh=MamNonUi.nut("Làm mới",false),find=MamNonUi.nut("Tìm kiếm",false),add=MamNonUi.nut("+ Thêm lớp",true),edit=MamNonUi.nut("Sửa lớp",false),members=MamNonUi.nut("Học sinh trong lớp",false),teacher=MamNonUi.nut("Phân công giáo viên",false);
-        MamNonUi.coCongCu(cboYear,215);MamNonUi.coCongCu(search,215);
+        MamNonUi.coCongCu(cboYear,215);MamNonUi.coCongCu(cboKhoi,145);MamNonUi.coCongCu(search,215);
         MamNonUi.coCongCu(find,110);MamNonUi.coCongCu(refresh,106);
         MamNonUi.coCongCu(add,135);MamNonUi.coCongCu(edit,105);
         MamNonUi.coCongCu(members,195);MamNonUi.coCongCu(teacher,195);
         JPanel top=new JPanel(new BorderLayout(0,10));
         top.add(MamNonUi.tieuDe("QUẢN LÝ LỚP MẦM NON"),BorderLayout.NORTH);
-        top.add(MamNonUi.thanhCongCu(new JLabel("Năm học:"),cboYear,new JLabel("Tên lớp:"),search,
+        top.add(MamNonUi.thanhCongCu(new JLabel("Năm học:"),cboYear,new JLabel("Khối:"),cboKhoi,new JLabel("Tên lớp:"),search,
             find,refresh,add,edit,members,teacher),BorderLayout.CENTER);
         add(top,BorderLayout.NORTH);add(new JScrollPane(table),BorderLayout.CENTER);add(status,BorderLayout.SOUTH);
-        cboYear.addActionListener(e->{if(!loadingYears)load();});refresh.addActionListener(e->loadYears(false));find.addActionListener(e->load());search.addActionListener(e->load());
+        cboYear.addActionListener(e->{if(!loadingYears)load();});cboKhoi.addActionListener(e->load());refresh.addActionListener(e->loadYears(false));find.addActionListener(e->load());search.addActionListener(e->load());
         add.addActionListener(e->edit(null));edit.addActionListener(e->{LopMamNon l=selected();if(l!=null)edit(l);});
         members.addActionListener(e->{LopMamNon l=selected();if(l!=null)showMembers(l);});
         teacher.addActionListener(e->{LopMamNon l=selected();if(l!=null)assign(l);});
@@ -53,15 +54,34 @@ public final class LopMamNonPanel extends JPanel {
         loadingYears=false;load();
     });}
     private void load(){NamHocMamNon year=(NamHocMamNon)cboYear.getSelectedItem();if(year==null){data=List.of();m.setRowCount(0);return;}
-        status.setText("Đang tải lớp học...");MamNonUi.tai(this,()->ctrl.lop(year.maNamHoc(),search.getText()),list->{data=list;m.setRowCount(0);for(LopMamNon l:list)m.addRow(new Object[]{l.maLop(),l.tenLop(),l.tenNamHoc(),l.trangThai()?"Hoạt động":"Ngừng sử dụng"});status.setText("Có "+list.size()+" lớp");});}
+        status.setText("Đang tải lớp học...");MamNonUi.tai(this,()->ctrl.lop(year.maNamHoc(),search.getText()),list->{
+            String selected=switch(cboKhoi.getSelectedIndex()){case 1->"MAM";case 2->"CHOI";case 3->"LA";default->null;};
+            data=selected==null?list:list.stream().filter(l->selected.equals(l.khoi())).toList();
+            m.setRowCount(0);for(LopMamNon l:data)m.addRow(new Object[]{l.maLop(),l.tenLop(),l.tenNamHoc(),tenKhoi(l.khoi()),l.siSoHienTai(),l.siSoToiDa()==null?"Chưa đặt":l.siSoToiDa(),l.trangThai()?"Hoạt động":"Ngừng sử dụng"});
+            status.setText("Có "+data.size()+" lớp"+(data.stream().anyMatch(l->l.siSoToiDa()==null)?" · Lớp chưa đặt sĩ số tối đa sẽ không nhận thêm học sinh.":""));
+        });}
+    private static String tenKhoi(String k){return "MAM".equals(k)?"Mầm":"CHOI".equals(k)?"Chồi":"LA".equals(k)?"Lá":"Chưa đặt";}
     private void edit(LopMamNon l){
+        MamNonUi.tai(this,ctrl::coCauTrucLop,ready->{
+            if(!ready){JOptionPane.showMessageDialog(this,"CSDL chưa có cột Khối và Sĩ số tối đa. Cần duyệt migration Giai đoạn 8 trước khi thêm/sửa lớp.");return;}
+            showEdit(l);
+        });
+    }
+    private void showEdit(LopMamNon l){
         if(cboYear.getItemCount()==0){JOptionPane.showMessageDialog(this,"Hãy tạo năm học trước.");return;}
         JComboBox<NamHocMamNon> years=new JComboBox<>();for(int i=0;i<cboYear.getItemCount();i++){NamHocMamNon y=cboYear.getItemAt(i);years.addItem(y);if(l!=null&&l.maNamHoc()==y.maNamHoc())years.setSelectedItem(y);}
         JTextField name=new JTextField(l==null?"":l.tenLop());JComboBox<String> statusBox=new JComboBox<>(new String[]{"Hoạt động","Ngừng sử dụng"});if(l!=null&&!l.trangThai())statusBox.setSelectedIndex(1);
-        JPanel form=MamNonUi.form("Năm học (*)",years,"Tên lớp (*)",name,"Trạng thái",statusBox);
+        JComboBox<String> khoi=new JComboBox<>(new String[]{"Chưa chọn","Mầm","Chồi","Lá"});
+        if(l!=null)khoi.setSelectedIndex("MAM".equals(l.khoi())?1:"CHOI".equals(l.khoi())?2:"LA".equals(l.khoi())?3:0);
+        JTextField max=new JTextField(l==null||l.siSoToiDa()==null?"":l.siSoToiDa().toString());
+        JPanel form=MamNonUi.form("Năm học (*)",years,"Tên lớp (*)",name,"Khối (lớp hoạt động)",khoi,
+            "Sĩ số tối đa (lớp hoạt động)",max,"Trạng thái",statusBox);
         if(!MamNonUi.xacNhan(this,form,l==null?"Thêm lớp Mầm non":"Sửa lớp Mầm non",false))return;
         NamHocMamNon year=(NamHocMamNon)years.getSelectedItem();if(year==null)return;
-        MamNonUi.ghi(this,()->ctrl.luuLop(l==null?0:l.maLop(),year.maNamHoc(),name.getText(),statusBox.getSelectedIndex()==0),this::load);
+        String value=max.getText().trim();Integer limit;
+        try{limit=value.isEmpty()?null:Integer.valueOf(value);}catch(NumberFormatException ex){JOptionPane.showMessageDialog(this,"Sĩ số tối đa phải là số nguyên dương.");return;}
+        String grade=switch(khoi.getSelectedIndex()){case 1->"MAM";case 2->"CHOI";case 3->"LA";default->null;};
+        MamNonUi.ghi(this,()->ctrl.luuLop(l==null?0:l.maLop(),year.maNamHoc(),name.getText(),statusBox.getSelectedIndex()==0,grade,limit),this::load);
     }
     private void showMembers(LopMamNon l){
         MamNonUi.tai(this,()->ctrl.xepLop(l.maLop()),list->{

@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.time.LocalDate;
 import vn.vinabacus.model.CoSo;
+import vn.vinabacus.model.ChiTietGiaoVienTrungTam;
 import vn.vinabacus.model.NhanVien;
 import vn.vinabacus.repository.CoSoRepository;
 import vn.vinabacus.repository.NhanVienRepository;
@@ -14,8 +15,13 @@ public class NhanVienService {
     private final CoSoRepository coSoRepository;
 
     public NhanVienService() {
-        nhanVienRepository = new NhanVienRepository();
-        coSoRepository = new CoSoRepository();
+        this(new NhanVienRepository(), new CoSoRepository());
+    }
+
+    NhanVienService(NhanVienRepository nhanVienRepository,
+                   CoSoRepository coSoRepository) {
+        this.nhanVienRepository = java.util.Objects.requireNonNull(nhanVienRepository);
+        this.coSoRepository = java.util.Objects.requireNonNull(coSoRepository);
     }
 
     public List<NhanVien> layDanhSach(CoSo coSo)
@@ -235,10 +241,19 @@ public class NhanVienService {
         int maCoSo = coSoRepository.timMaCoSo(coSo);
 
         // Cap nhat trang thai cong tac tai co so
-        return nhanVienRepository.ngungCongTac(
-                maCoSo,
-                maNhanVien
-        );
+        return coSo == CoSo.TRUNG_TAM
+                ? nhanVienRepository.ngungCongTacTrungTam(maCoSo, maNhanVien)
+                : nhanVienRepository.ngungCongTac(maCoSo, maNhanVien);
+    }
+
+    public ChiTietGiaoVienTrungTam chiTietPhanCongTrungTam(
+            CoSo coSo, int maNhanVien) throws SQLException {
+        if (coSo != CoSo.TRUNG_TAM)
+            throw new IllegalArgumentException("Chi tiết phân công này chỉ dành cho Trung tâm");
+        if (maNhanVien <= 0)
+            throw new IllegalArgumentException("Mã nhân viên không hợp lệ");
+        return nhanVienRepository.chiTietPhanCongTrungTam(
+                coSoRepository.timMaCoSo(coSo), maNhanVien);
     }
 
 public boolean lamViecTroLai(

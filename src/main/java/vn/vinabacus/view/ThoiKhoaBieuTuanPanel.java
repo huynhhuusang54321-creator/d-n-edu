@@ -1,6 +1,7 @@
 package vn.vinabacus.view;
 
 import java.awt.BorderLayout;
+import vn.vinabacus.service.CaHocTrungTam;
 import java.awt.Color;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
@@ -36,6 +38,8 @@ import javax.swing.Scrollable;
 import javax.swing.JViewport;
 import javax.swing.SwingConstants;
 import vn.vinabacus.model.LichHocLop;
+import vn.vinabacus.model.LopTrungTam;
+import vn.vinabacus.service.DuKienKetThucLop.BuoiDieuChinh;
 
 /** Thoi khoa bieu tuan (chi xem), su dung du lieu LichHocLop hien co.
  * Khong thay doi database. Cac lop khac nhau duoc phep hoc cung gio.
@@ -63,6 +67,9 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
     private Consumer<LichHocLop> khiChonLich = x -> { };
     private LocalDate dauTuan;
     private List<LichHocLop> danhSach = List.of();
+    private List<BuoiDieuChinh> buoiDieuChinh = List.of();
+    private Map<Integer, LopTrungTam> lopTheoMa = Map.of();
+    private Map<Integer, String> giaoVienTheoLop = Map.of();
 
     public ThoiKhoaBieuTuanPanel(LocalDate ngay, Consumer<LocalDate> khiDoiTuan) {
         super(new BorderLayout(5, 6));
@@ -73,7 +80,7 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
                 BorderFactory.createLineBorder(new Color(0xDCE4E5)),
                 BorderFactory.createEmptyBorder(8, 8, 8, 8)));
 
-        JLabel title = new JLabel("THỜI KHÓA BIỂU THEO TUẦN");
+        JLabel title = new JLabel("THỜI KHÓA BIỂU – TRUNG TÂM");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 14f));
         title.setForeground(GREEN);
         JPanel hangTieuDe = new JPanel(new BorderLayout());
@@ -121,7 +128,7 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
         footer.setOpaque(false);
         lblThongKe.setForeground(GRAY);
         footer.add(lblThongKe, BorderLayout.NORTH);
-        JLabel note = new JLabel("Giờ thực tế giữ nguyên · Lớp cùng khung giờ xếp dọc · Chưa kiểm tra trùng phòng học.");
+        JLabel note = new JLabel("8 ca liên tục 07:00–19:00 · 90 phút/ca · Không có giờ nghỉ giữa các ca.");
         note.setForeground(GRAY);
         note.setFont(note.getFont().deriveFont(11f));
         footer.add(note, BorderLayout.SOUTH);
@@ -145,6 +152,23 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
         danhSach = lich == null ? List.of() : List.copyOf(lich);
         capNhat();
     }
+    public void datBuoiDieuChinh(List<BuoiDieuChinh> buoi) {
+        buoiDieuChinh = buoi == null ? List.of() : List.copyOf(buoi);
+        capNhat();
+    }
+    public void datThongTinLop(List<LopTrungTam> lop) {
+        if (lop == null) lopTheoMa = Map.of();
+        else {
+            Map<Integer, LopTrungTam> theoMa = new java.util.HashMap<>();
+            for (LopTrungTam x : lop) theoMa.put(x.maLop(), x);
+            lopTheoMa = Map.copyOf(theoMa);
+        }
+        capNhat();
+    }
+    public void datGiaoVienTheoLop(Map<Integer, String> giaoVien) {
+        giaoVienTheoLop = giaoVien == null ? Map.of() : Map.copyOf(giaoVien);
+        capNhat();
+    }
     private static LocalDate veDauTuan(LocalDate date) {
         return date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
     }
@@ -159,14 +183,36 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
                     x.gioBatDau() == null || x.gioKetThuc() == null) continue;
             LocalDate ngay = dauTuan.plusDays(x.thuTrongTuan() - 2L);
             if (!ngay.isBefore(x.tuNgay()) &&
-                    (x.denNgay() == null || !ngay.isAfter(x.denNgay()))) {
+                    (x.denNgay() == null || !ngay.isAfter(x.denNgay()))
+                    && !biHuy(x, ngay)) {
                 buoi++;
                 lop.add(x.maLop());
             }
         }
+        for (BuoiDieuChinh b : buoiDieuChinh) {
+            if ("DU_KIEN".equals(b.trangThai())
+                    && !b.ngayHoc().isBefore(dauTuan)
+                    && b.ngayHoc().isBefore(dauTuan.plusDays(7))
+                    && b.soCa() >= 1 && b.soCa() <= 8) {
+                buoi++;
+                lop.add(b.maLop());
+            }
+        }
         lblThongKe.setText("Tuần này: " + buoi + " buổi học · " +
-                lop.size() + " lớp · Bấm vào ô lịch để chọn dòng tương ứng");
+                lop.size() + " lớp · Bấm vào thẻ buổi học để sửa trực tiếp");
         luoi.capNhatKichThuoc();
+    }
+
+    private boolean biHuy(LichHocLop lich, LocalDate ngay) {
+        for (BuoiDieuChinh b : buoiDieuChinh) {
+            if (!"HUY".equals(b.trangThai()) || b.maLop() != lich.maLop()
+                    || !ngay.equals(b.ngayHoc())) continue;
+            if (b.maLichHoc() != null && b.maLichHoc() == lich.maLichHoc()) return true;
+            if (b.maLichHoc() == null && CaHocTrungTam
+                    .timTheoGio(lich.gioBatDau(), lich.gioKetThuc())
+                    .map(c -> c.soCa() == b.soCa()).orElse(false)) return true;
+        }
+        return false;
     }
 
     /**
@@ -194,7 +240,10 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
             int batDau;
             int ketThuc;
             final List<List<Khung>> theoNgay = new ArrayList<>();
-            NhomGio(int batDau, int ketThuc) {
+            final boolean lichCu;
+            NhomGio(int batDau, int ketThuc) { this(batDau, ketThuc, false); }
+            NhomGio(int batDau, int ketThuc, boolean lichCu) {
+                this.lichCu = lichCu;
                 this.batDau = batDau;
                 this.ketThuc = ketThuc;
                 for (int i = 0; i < 7; i++) theoNgay.add(new ArrayList<>());
@@ -238,7 +287,10 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
                 if (o.bounds.contains(event.getPoint())) {
                     LichHocLop lh = o.lich;
                     return "<html><b>" + html(lh.tenLop()) + "</b><br>" +
-                            html(lh.tenKhoaHoc()) + "<br>" +
+                            html(lh.tenKhoaHoc()) + "<br>Giáo viên: " +
+                            html(giaoVienTheoLop.getOrDefault(lh.maLop(), "Chưa phân công"))
+                            + "<br>Phòng: " +
+                            html(lh.tenPhong() == null ? "Chưa gán" : lh.tenPhong()) + "<br>" +
                             lh.gioBatDau().format(GIO) + " - " + lh.gioKetThuc().format(GIO) +
                             "<br>Từ " + lh.tuNgay() +
                             (lh.denNgay() == null ? "" : " đến " + lh.denNgay()) + "</html>";
@@ -263,10 +315,7 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
             return NET_LOP[Math.floorMod(lh.maLop(), NET_LOP.length)];
         }
 
-        /** Muoi khung gio co dinh 07:00-22:00, moi khung 90 phut.
-         * Gio hoc thuc te duoc hien thi nguyen ven tren the, khong bi sua theo khung.
-         * Buoi co gio bat dau trong khung nao thi xep vao khung do.
-         */
+        /** Dung dung 8 ca theo quy dinh chung; lich cu ngoai ca van hien thi gio goc. */
         private List<NhomGio> nhomLich() {
             List<Khung> buoi = new ArrayList<>();
             for (LichHocLop lh : danhSach) {
@@ -275,27 +324,52 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
                         lh.thuTrongTuan() < 2 || lh.thuTrongTuan() > 8) continue;
                 LocalDate ngay = dauTuan.plusDays(lh.thuTrongTuan() - 2L);
                 if (ngay.isBefore(lh.tuNgay()) ||
-                        (lh.denNgay() != null && ngay.isAfter(lh.denNgay()))) continue;
+                        (lh.denNgay() != null && ngay.isAfter(lh.denNgay()))
+                        || biHuy(lh, ngay)) continue;
                 int batDau = phut(lh.gioBatDau());
                 int ketThuc = phut(lh.gioKetThuc());
                 if (ketThuc <= batDau) continue;
                 buoi.add(new Khung(lh, batDau, ketThuc, lh.thuTrongTuan() - 2));
             }
+            for (BuoiDieuChinh b : buoiDieuChinh) {
+                if (b.ngayHoc().isBefore(dauTuan)
+                        || !b.ngayHoc().isBefore(dauTuan.plusDays(7))
+                        || b.soCa() < 1 || b.soCa() > 8) continue;
+                LopTrungTam lop = lopTheoMa.get(b.maLop());
+                if (lop == null) continue;
+                CaHocTrungTam.Ca ca = CaHocTrungTam.layTheoSoCa(b.soCa());
+                String loai = "HUY".equals(b.trangThai()) ? "HUY_BUOI" : "BUOI_BU";
+                LichHocLop motBuoi = new LichHocLop(-b.maBuoiHoc(), b.maLop(),
+                        lop.maKhoaHoc(), lop.maMonHoc(), lop.tenMonHoc(),
+                        lop.tenKhoaHoc(), lop.tenLop(),
+                        b.ngayHoc().getDayOfWeek().getValue() + 1,
+                        ca.batDau(), ca.ketThuc(), b.ngayHoc(), b.ngayHoc(),
+                        loai, b.maPhong(), b.tenPhong());
+                buoi.add(new Khung(motBuoi, phut(ca.batDau()),
+                        phut(ca.ketThuc()), b.ngayHoc().getDayOfWeek().getValue() - 1));
+            }
             buoi.sort(Comparator.comparingInt(Khung::batDau)
                     .thenComparingInt(Khung::ketThuc)
                     .thenComparingInt(k -> k.lich().maLop()));
             List<NhomGio> nhom = new ArrayList<>();
-            final int mo = 7 * 60;
-            final int dong = 22 * 60;
-            final int buoc = 90;
-            for (int t = mo; t < dong; t += buoc)
-                nhom.add(new NhomGio(t, t + buoc));
+            for (CaHocTrungTam.Ca ca : CaHocTrungTam.DANH_SACH)
+                nhom.add(new NhomGio(phut(ca.batDau()), phut(ca.ketThuc())));
+            NhomGio lichCu = new NhomGio(0, 0, true);
+            boolean coLichCu = false;
             for (Khung b : buoi) {
-                // Khong liet ke ca hoan toan nam ngoai 07:00-22:00.
-                if (b.ketThuc() <= mo || b.batDau() >= dong) continue;
-                int slot = Math.min(9, Math.max(0, (b.batDau() - mo) / buoc));
-                nhom.get(slot).theoNgay.get(b.thu()).add(b);
+                int slot = -1;
+                for (int j = 0; j < CaHocTrungTam.DANH_SACH.size(); j++) {
+                    CaHocTrungTam.Ca ca = CaHocTrungTam.DANH_SACH.get(j);
+                    if (phut(ca.batDau()) == b.batDau()
+                            && phut(ca.ketThuc()) == b.ketThuc()) { slot = j; break; }
+                }
+                if (slot < 0) {
+                    // Khong gan lich cu ngoai 8 ca vao hang ca moi sai gio.
+                    lichCu.theoNgay.get(b.thu()).add(b);
+                    coLichCu = true;
+                } else nhom.get(slot).theoNgay.get(b.thu()).add(b);
             }
+            if (coLichCu) nhom.add(lichCu);
             return nhom;
         }
 
@@ -351,11 +425,19 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
             int rong = Math.max(22, rongNgay - 2 * LE - 15);
             FontMetrics ten = getFontMetrics(fontTen);
             FontMetrics khoa = getFontMetrics(fontKhoa);
-            int dongTen = xuongDong(b.lich().tenLop(), ten, rong).size();
+            int dongTen = xuongDong(tenThe(b.lich()), ten, rong).size();
             int dongKhoa = xuongDong(b.lich().tenKhoaHoc(), khoa, rong).size();
             String gio = b.lich().gioBatDau().format(GIO) + " – " + b.lich().gioKetThuc().format(GIO);
             boolean tachGio = getFontMetrics(fontGio).stringWidth(gio) > rong;
-            return 11 + dongTen * 15 + 2 + dongKhoa * 13 + 3 + (tachGio ? 28 : 15) + 6;
+            String tenPhong = "Phòng: " + (b.lich().tenPhong() == null
+                    ? "Chưa gán phòng" : b.lich().tenPhong());
+            int dongPhong = xuongDong(tenPhong, khoa, rong).size();
+            String giaoVien = "GV: " + giaoVienTheoLop.getOrDefault(
+                    b.lich().maLop(), "Chưa phân công");
+            int dongGiaoVien = xuongDong(giaoVien, khoa, rong).size();
+            return 11 + dongTen * 15 + 2 + dongKhoa * 13 + 3
+                    + (tachGio ? 28 : 15) + 5 + dongGiaoVien * 13
+                    + dongPhong * 13 + 7;
         }
 
         private int caoNhom(NhomGio n) {
@@ -407,7 +489,7 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
                 g.fillRect(0, 0, tongRong, CAO_TIEU_DE);
                 g.setColor(new Color(0x174D35));
                 g.setFont(getFont().deriveFont(Font.BOLD, 12f));
-                g.drawString("Giờ học", 17, 31);
+                g.drawString("Ca học", 17, 31);
                 String[] thu = {"Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "CN"};
                 for (int d = 0; d < 7; d++) {
                     int x = xNgay(d);
@@ -444,8 +526,14 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
                     }
                     g.setColor(new Color(0x304E42));
                     g.setFont(getFont().deriveFont(Font.BOLD, 11f));
-                    g.drawString(gioPhut(n.batDau), 13, y + 29);
-                    g.drawString("– " + gioPhut(n.ketThuc), 13, y + 47);
+                    if (n.lichCu) {
+                        g.drawString("Lịch cũ", 10, y + 20);
+                        g.drawString("Chưa đổi ca", 5, y + 39);
+                    } else {
+                        g.drawString("Ca " + (i + 1), 13, y + 18);
+                        g.drawString(gioPhut(n.batDau), 13, y + 35);
+                        g.drawString("– " + gioPhut(n.ketThuc), 13, y + 51);
+                    }
                     for (int d = 0; d < 7; d++) {
                         int x = xNgay(d);
                         int w = rongNgay(d);
@@ -454,7 +542,8 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
                             Rectangle rect = new Rectangle(x + LE, yThe,
                                     Math.max(1, w - 2 * LE), caoThe(b, w));
                             veThe(g, rect, b);
-                            cacO.add(new OChon(rect, b.lich()));
+                            if (b.lich().maLichHoc() > 0)
+                                cacO.add(new OChon(rect, b.lich()));
                             yThe += rect.height + CACH_THE;
                         }
                     }
@@ -474,16 +563,19 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
 
         private void veThe(Graphics2D g, Rectangle rect, Khung khung) {
             LichHocLop lh = khung.lich();
-            g.setColor(mau(lh));
+            g.setColor("HUY_BUOI".equals(lh.trangThai())
+                    ? new Color(0xF7E1DF) : "BUOI_BU".equals(lh.trangThai())
+                    ? new Color(0xFFF1C9) : mau(lh));
             g.fillRoundRect(rect.x, rect.y, rect.width, rect.height, 7, 7);
-            g.setColor(vien(lh));
+            g.setColor("HUY_BUOI".equals(lh.trangThai())
+                    ? new Color(0xBA4038) : vien(lh));
             g.fillRoundRect(rect.x, rect.y, 4, rect.height, 5, 5);
             int trai = rect.x + 9;
             int y = rect.y + 15;
             int rong = rect.width - 18;
             g.setColor(new Color(0x1E3643));
             g.setFont(fontTen);
-            for (String line : xuongDong(lh.tenLop(), g.getFontMetrics(), rong)) {
+            for (String line : xuongDong(tenThe(lh), g.getFontMetrics(), rong)) {
                 g.drawString(line, trai, y);
                 y += 15;
             }
@@ -500,11 +592,32 @@ public final class ThoiKhoaBieuTuanPanel extends JPanel {
             String gio = lh.gioBatDau().format(GIO) + " – " + lh.gioKetThuc().format(GIO);
             if (g.getFontMetrics().stringWidth(gio) <= rong) {
                 g.drawString(gio, trai, y + 6);
+                y += 15;
             } else {
                 // Tranh de chu gio tran ra ngoai cot ngay tren man hinh hep.
                 g.drawString(lh.gioBatDau().format(GIO), trai, y + 6);
                 g.drawString(lh.gioKetThuc().format(GIO), trai, y + 19);
+                y += 28;
             }
+            g.setFont(fontKhoa);
+            g.setColor(new Color(0x285845));
+            String giaoVien = "GV: " + giaoVienTheoLop.getOrDefault(
+                    lh.maLop(), "Chưa phân công");
+            for (String dong : xuongDong(giaoVien, g.getFontMetrics(), rong)) {
+                g.drawString(dong, trai, y + 6);
+                y += 13;
+            }
+            String phong = "Phòng: " + (lh.tenPhong() == null ? "Chưa gán phòng" : lh.tenPhong());
+            for (String dong : xuongDong(phong, g.getFontMetrics(), rong)) {
+                g.drawString(dong, trai, y + 6);
+                y += 13;
+            }
+        }
+
+        private String tenThe(LichHocLop lich) {
+            return ("HUY_BUOI".equals(lich.trangThai()) ? "ĐÃ HỦY · "
+                    : "BUOI_BU".equals(lich.trangThai()) ? "BUỔI BÙ · " : "")
+                    + lich.tenLop();
         }
     }
 }

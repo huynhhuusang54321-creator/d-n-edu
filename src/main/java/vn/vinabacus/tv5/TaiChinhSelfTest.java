@@ -18,6 +18,7 @@ public final class TaiChinhSelfTest {
     public static void main(String[] args){
         eq("500000",TaiChinhService.conNo(new BigDecimal("700000"),new BigDecimal("200000")));
         eq("0",TaiChinhService.conNo(new BigDecimal("100000"),new BigDecimal("100000")));
+        eq("-10000",TaiChinhService.conNo(new BigDecimal("100000"),new BigDecimal("110000")));
         eq("800000",TaiChinhService.sauGiam(new BigDecimal("1000000"),new BigDecimal("200000")));
         eq("125000.50",TaiChinhService.tien("125000.50"));
         if(!LocalDate.of(2026,11,1).equals(TaiChinhService.thangBatDau("2026-11")))throw new AssertionError("Sai tháng áp dụng");
@@ -39,6 +40,10 @@ public final class TaiChinhSelfTest {
             new BigDecimal("-50000"),new BigDecimal("600000"),null,"HIEU_LUC");
         eq("1950000",k.phaiThu());
         eq("1350000",k.conNo());
+        vn.vinabacus.model.TaiChinhDTO.KhoanThu thuVuot=new vn.vinabacus.model.TaiChinhDTO.KhoanThu(
+            2,2,"Học viên", "HOC_PHI_KHOA",new BigDecimal("100000"),
+            BigDecimal.ZERO,new BigDecimal("110000"),null,"HIEU_LUC");
+        eq("-10000",thuVuot.conNo());
         // Kiểm tra màu nền nút chính không bị Windows Look&Feel phủ màu.
         javax.swing.JButton button=vn.vinabacus.view.TaiChinhUi.nut("+ Lập phiếu thu",true);
         button.setSize(button.getPreferredSize());

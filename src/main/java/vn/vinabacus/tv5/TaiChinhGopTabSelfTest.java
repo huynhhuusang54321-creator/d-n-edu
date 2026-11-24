@@ -40,6 +40,13 @@ public final class TaiChinhGopTabSelfTest {
         TongHopThuPhi.TongQuan total=TongHopThuPhi.tongQuan(rows);
         money("3500000",total.phaiThu());money("2100000",total.daThu());
         money("1400000",total.conNo());check(total.chuaLap()==1,"Chỉ 1 khoản dự kiến");
+        KhoanThu overpaid=new KhoanThu(103,6,"Thu vượt","HOC_PHI_KHOA",
+            n("100000"),n("0"),n("110000"),null,"HIEU_LUC",15,null);
+        Dong overpaidRow=TongHopThuPhi.trungTam(List.of(overpaid),List.of()).get(0);
+        money("-10000",overpaidRow.conNo());
+        check(TongHopThuPhi.THU_VUOT.equals(overpaidRow.trangThai())&&!overpaidRow.duocThu(),
+            "Thu vượt phải hiển thị nợ âm và không cho thu thêm");
+        money("-10000",TongHopThuPhi.tongQuan(List.of(overpaidRow)).conNo());
 
         List<BangTinhChot> bang=List.of(new BangTinhChot(8,"Bé An","2026-11",n("1000000"),n("300000")),
             new BangTinhChot(9,"Bé Bình","2026-11",n("500000"),n("0")));

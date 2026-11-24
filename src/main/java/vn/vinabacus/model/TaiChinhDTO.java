@@ -15,17 +15,23 @@ public final class TaiChinhDTO {
     public record KhoanThu(int maKhoan, int maHocVien, String hocVien,
                            String loai, BigDecimal goc, BigDecimal dieuChinh,
                            BigDecimal daThu, LocalDate han, String trangThai,
-                           Integer maDangKy, Integer maBangTinh) {
+                           Integer maDangKy, Integer maBangTinh,String soDienThoai) {
+        public KhoanThu(int maKhoan,int maHocVien,String hocVien,String loai,
+                        BigDecimal goc,BigDecimal dieuChinh,BigDecimal daThu,
+                        LocalDate han,String trangThai,Integer maDangKy,Integer maBangTinh){
+            this(maKhoan,maHocVien,hocVien,loai,goc,dieuChinh,daThu,han,trangThai,
+                maDangKy,maBangTinh,null);
+        }
         /** Tương thích các đoạn code cũ tạo KhoanThu với 9 tham số. */
         public KhoanThu(int maKhoan, int maHocVien, String hocVien, String loai,
                         BigDecimal goc, BigDecimal dieuChinh, BigDecimal daThu,
                         LocalDate han, String trangThai) {
-            this(maKhoan,maHocVien,hocVien,loai,goc,dieuChinh,daThu,han,trangThai,null,null);
+            this(maKhoan,maHocVien,hocVien,loai,goc,dieuChinh,daThu,han,trangThai,null,null,null);
         }
         public BigDecimal phaiThu() { return goc.add(dieuChinh); }
         public BigDecimal conNo() {
             if (!"HIEU_LUC".equals(trangThai)) return BigDecimal.ZERO;
-            return phaiThu().subtract(daThu).max(BigDecimal.ZERO);
+            return phaiThu().subtract(daThu);
         }
         public String tenLoai() { return switch (loai) {
             case "HOC_PHI_KHOA" -> "Học phí khóa";
@@ -37,7 +43,38 @@ public final class TaiChinhDTO {
 
     public record PhieuThu(int maPhieu, String soPhieu, String hocVien,
                            BigDecimal soTien, LocalDateTime ngayThu,
-                           String hinhThuc, String trangThai) {}
+                           String hinhThuc, String trangThai,
+                           String taiKhoanThu, String noiDung, String ghiChu,
+                           LocalDateTime ngayHuy,String lyDoHuy) {
+        public PhieuThu(int maPhieu,String soPhieu,String hocVien,BigDecimal soTien,
+                        LocalDateTime ngayThu,String hinhThuc,String trangThai,
+                        String taiKhoanThu,String noiDung,String ghiChu){
+            this(maPhieu,soPhieu,hocVien,soTien,ngayThu,hinhThuc,trangThai,
+                taiKhoanThu,noiDung,ghiChu,null,null);
+        }
+        public PhieuThu(int maPhieu, String soPhieu, String hocVien,
+                        BigDecimal soTien, LocalDateTime ngayThu,
+                        String hinhThuc, String trangThai,
+                        String taiKhoanThu, String ghiChu) {
+            this(maPhieu,soPhieu,hocVien,soTien,ngayThu,hinhThuc,trangThai,
+                 taiKhoanThu,null,ghiChu,null,null);
+        }
+        public PhieuThu(int maPhieu, String soPhieu, String hocVien,
+                        BigDecimal soTien, LocalDateTime ngayThu,
+                        String hinhThuc, String trangThai) {
+            this(maPhieu,soPhieu,hocVien,soTien,ngayThu,hinhThuc,trangThai,
+                 null,null,null,null,null);
+        }
+    }
+
+    /** Phân bổ thực tế đã lưu của một phiếu, kể cả phiếu sau đó bị hủy. */
+    public record PhanBoPhieu(int maKhoan, String noiDung, BigDecimal soTien,
+                              String loaiBienDong) { }
+    public record LichSuThu(int maPhieu,String soPhieu,LocalDateTime ngayThu,
+                            String khoaHoc,BigDecimal soTien,String trangThai) { }
+    public record UuDaiDangKy(int maDangKy,String tenSnapshot,BigDecimal soTienGiam) { }
+    public record DongThuBaoCao(LocalDate ngayThu,String khoaHoacKhoan,
+                                String nhanVien,BigDecimal phanBoRong) { }
 
     /** Đăng ký Trung tâm đã có giá sau chiết khấu, chưa phát sinh khoản thu. */
     public record DangKyChuaThu(int id, String hocVien, String khoa,
@@ -52,7 +89,25 @@ public final class TaiChinhDTO {
     public record HocPhiTrungTam(int maDangKy, String hocVien, String monHoc,
                                   String khoaHoc, String lopHoc, BigDecimal goc,
                                   BigDecimal giam, BigDecimal phaiThu,
-                                  BigDecimal daDong, BigDecimal conNo) {}
+                                  BigDecimal daDong, BigDecimal conNo,
+                                  String soPhieuGanNhat, LocalDateTime ngayThuGanNhat,
+                                  BigDecimal soTienLanThu,int maHocVien,String soDienThoai) {
+        public HocPhiTrungTam(int maDangKy,String hocVien,String monHoc,
+                              String khoaHoc,String lopHoc,BigDecimal goc,
+                              BigDecimal giam,BigDecimal phaiThu,BigDecimal daDong,
+                              BigDecimal conNo,String soPhieuGanNhat,
+                              LocalDateTime ngayThuGanNhat,BigDecimal soTienLanThu){
+            this(maDangKy,hocVien,monHoc,khoaHoc,lopHoc,goc,giam,phaiThu,daDong,
+                conNo,soPhieuGanNhat,ngayThuGanNhat,soTienLanThu,0,null);
+        }
+        public HocPhiTrungTam(int maDangKy, String hocVien, String monHoc,
+                              String khoaHoc, String lopHoc, BigDecimal goc,
+                              BigDecimal giam, BigDecimal phaiThu,
+                              BigDecimal daDong, BigDecimal conNo) {
+            this(maDangKy,hocVien,monHoc,khoaHoc,lopHoc,goc,giam,phaiThu,
+                 daDong,conNo,null,null,null,0,null);
+        }
+    }
 
     /** Bảng tính phí Mầm non đã CHỐT; có thể lập hai khoản theo từng loại. */
     public record BangTinhChot(int id, String hocVien, String ky,
@@ -67,5 +122,7 @@ public final class TaiChinhDTO {
 
     public record ThongKe(BigDecimal doanhThuThang, BigDecimal daThuToanBo,
                           BigDecimal tongPhaiThuHieuLuc, BigDecimal congNoHienTai,
-                          long soKhoanConNo, long soKhoanDaTatToan) {}
+                          long soKhoanConNo, long soKhoanDaTatToan,
+                          BigDecimal tongGiamGia, long soHocVienConNo,
+                          long soPhieuHopLe) {}
 }

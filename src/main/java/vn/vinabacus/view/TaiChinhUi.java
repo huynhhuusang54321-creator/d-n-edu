@@ -24,6 +24,10 @@ public final class TaiChinhUi {
     @FunctionalInterface public interface Task<T> { T call() throws Exception; }
 
     public static <T> void tai(Component parent, Task<T> task, Consumer<T> success) {
+        tai(parent, task, success, () -> {});
+    }
+    public static <T> void tai(Component parent, Task<T> task, Consumer<T> success,
+                               Runnable completed) {
         new SwingWorker<T, Void>() {
             @Override protected T doInBackground() throws Exception { return task.call(); }
             @Override protected void done() {
@@ -31,14 +35,19 @@ public final class TaiChinhUi {
                 catch (InterruptedException ex) { Thread.currentThread().interrupt(); loi(parent, ex); }
                 catch (ExecutionException ex) { loi(parent, ex.getCause() == null ? ex : ex.getCause()); }
                 catch (Exception ex) { loi(parent, ex); }
+                finally { completed.run(); }
             }
         }.execute();
     }
     public static void ghi(Component parent, Task<?> task, Runnable success) {
+        ghi(parent, task, success, () -> {});
+    }
+    public static void ghi(Component parent, Task<?> task, Runnable success,
+                           Runnable completed) {
         tai(parent, task, ignored -> {
             success.run();
             JOptionPane.showMessageDialog(parent, "Đã lưu thành công.", "VINABACUS – Tài chính", JOptionPane.INFORMATION_MESSAGE);
-        });
+        }, completed);
     }
     public static void loi(Component parent, Throwable ex) {
         JOptionPane.showMessageDialog(parent, ex.getMessage() == null ? ex.toString() : ex.getMessage(),
@@ -268,10 +277,10 @@ public final class TaiChinhUi {
     /** Hộp thoại có kiểm tra ngay tại nút Lưu, lỗi không làm mất dữ liệu đã nhập. */
     public static boolean hopThoaiForm(Component parent, String title, String subtitle,
                                         JComponent form, String action, Runnable validate) {
-        return hopThoaiForm(parent, title, subtitle, form, action, validate, false);
+        return hopThoaiForm(parent, title, subtitle, form, action, validate, true);
     }
 
-    /** Chỉ màn hình Xem chi tiết cần căn giữa màn hình đang chứa cửa sổ VINABACUS. */
+    /** Căn hộp thoại trong vùng màn hình khả dụng; nội dung cuộn, thanh nút cố định. */
     private static boolean hopThoaiForm(Component parent, String title, String subtitle,
                                         JComponent form, String action, Runnable validate,
                                         boolean centerOnMonitor) {
@@ -348,6 +357,12 @@ public final class TaiChinhUi {
             dialog.setSize(width, Math.min(preferred, screen.height - 70));
             dialog.setLocationRelativeTo(parent);
         }
+        dialog.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override public void windowOpened(java.awt.event.WindowEvent e) {
+                SwingUtilities.invokeLater(() -> scroller.getViewport()
+                    .setViewPosition(new Point(0, 0)));
+            }
+        });
         dialog.setVisible(true);
         return accepted[0];
     }

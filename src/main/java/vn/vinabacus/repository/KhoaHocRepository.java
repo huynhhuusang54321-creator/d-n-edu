@@ -78,13 +78,22 @@ public final class KhoaHocRepository {
         // Khi doi sang mon khac, mon moi phai dang hoat dong.
         String sql = """
                 UPDATE k
-                SET k.MaMonHoc = ?, k.TenKhoaHoc = ?, k.TongSoBuoi = ?,
-                    k.HocPhiMacDinh = ?, k.TrangThai = ?
+                SET MaMonHoc = ?, TenKhoaHoc = ?, TongSoBuoi = ?,
+                    HocPhiMacDinh = ?, TrangThai = ?
                 FROM dbo.KhoaHoc k
                 INNER JOIN dbo.MonHoc m
                   ON m.MaMonHoc = ? AND m.MaCoSo = ?
                 WHERE k.MaKhoaHoc = ? AND k.MaCoSo = ?
                   AND (m.TrangThai = 1 OR m.MaMonHoc = k.MaMonHoc)
+                  AND (k.MaMonHoc = ? OR (
+                      NOT EXISTS (SELECT 1 FROM dbo.LopTrungTam l WITH (HOLDLOCK)
+                                  WHERE l.MaKhoaHoc=k.MaKhoaHoc AND l.MaCoSo=k.MaCoSo)
+                      AND NOT EXISTS (SELECT 1 FROM dbo.DangKyKhoaHoc d WITH (HOLDLOCK)
+                                      WHERE d.MaKhoaHoc=k.MaKhoaHoc AND d.MaCoSo=k.MaCoSo)
+                      AND NOT EXISTS (SELECT 1 FROM dbo.GiamGiaKhoaHoc g WITH (HOLDLOCK)
+                                      WHERE g.MaKhoaHoc=k.MaKhoaHoc AND g.MaCoSo=k.MaCoSo)
+                      AND NOT EXISTS (SELECT 1 FROM dbo.GiamGiaMonHoc gm WITH (HOLDLOCK)
+                                      WHERE gm.MaMonHoc=k.MaMonHoc AND gm.MaCoSo=k.MaCoSo)))
                 """;
         try (Connection con = Database.moKetNoi();
              PreparedStatement ps = con.prepareStatement(sql)) {
@@ -97,8 +106,10 @@ public final class KhoaHocRepository {
             ps.setInt(7, maCoSo);
             ps.setInt(8, maKhoaHoc);
             ps.setInt(9, maCoSo);
+            ps.setInt(10, maMonHoc);
             if (ps.executeUpdate() != 1) {
-                throw new SQLException("Khong tim thay khoa hoc hoac mon hoc khong hop le");
+                throw new SQLException("Không thể cập nhật khóa: môn mới không hợp lệ "
+                        + "hoặc khóa/môn đã có lớp, đăng ký hay liên kết giảm giá nên không thể đổi môn.");
             }
         }
     }

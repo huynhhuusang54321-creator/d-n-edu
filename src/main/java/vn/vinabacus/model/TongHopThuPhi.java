@@ -21,6 +21,7 @@ public final class TongHopThuPhi {
     public static final String CHUA_DONG="Chưa đóng";
     public static final String MOT_PHAN="Đóng một phần";
     public static final String DA_DONG="Đã đóng đủ";
+    public static final String THU_VUOT="Thu vượt";
     public static final String DA_HUY="Đã hủy";
     public static final String MIEN_PHI="Không phát sinh";
 
@@ -28,7 +29,7 @@ public final class TongHopThuPhi {
                        String noiDung, String mon, String khoa, String lop,
                        BigDecimal goc, BigDecimal giam, BigDecimal dieuChinh,
                        BigDecimal phaiThu, BigDecimal daThu, BigDecimal conNo,
-                       LocalDate han, String trangThai) {
+                       LocalDate han, String trangThai,int maHocVien,String soDienThoai) {
         public String maHienThi() {
             if(maKhoan>0)return "KT #"+maKhoan;
             return ("HOC_PHI_KHOA".equals(loai)?"DK #":"BT #")+maNguon;
@@ -46,6 +47,7 @@ public final class TongHopThuPhi {
 
     private static String trangThai(KhoanThu k) {
         if("HUY".equals(k.trangThai()))return DA_HUY;
+        if(k.conNo().signum()<0)return THU_VUOT;
         if(k.conNo().signum()==0)return DA_DONG;
         if(k.daThu().signum()==0)return CHUA_DONG;
         return MOT_PHAN;
@@ -53,12 +55,15 @@ public final class TongHopThuPhi {
     private static Dong tuKhoan(KhoanThu k, String noiDung, String mon, String khoa,
                                 String lop, BigDecimal goc, BigDecimal giam, int maNguon) {
         return new Dong(k.maKhoan(),maNguon,k.loai(),k.hocVien(),noiDung,mon,khoa,lop,
-            goc,giam,k.dieuChinh(),k.phaiThu(),k.daThu(),k.conNo(),k.han(),trangThai(k));
+            goc,giam,k.dieuChinh(),k.phaiThu(),k.daThu(),k.conNo(),k.han(),trangThai(k),
+            k.maHocVien(),k.soDienThoai());
     }
     private static Dong chuaLap(int id,String loai,String hocVien,String noiDung,
-                                String mon,String khoa,String lop,BigDecimal goc,BigDecimal giam,BigDecimal due) {
+                                String mon,String khoa,String lop,BigDecimal goc,BigDecimal giam,
+                                BigDecimal due,int maHocVien,String soDienThoai) {
         return new Dong(0,id,loai,hocVien,noiDung,mon,khoa,lop,goc,giam,
-            BigDecimal.ZERO,due,BigDecimal.ZERO,BigDecimal.ZERO,null,due.signum()>0?CHUA_LAP:MIEN_PHI);
+            BigDecimal.ZERO,due,BigDecimal.ZERO,BigDecimal.ZERO,null,
+            due.signum()>0?CHUA_LAP:MIEN_PHI,maHocVien,soDienThoai);
     }
 
     public static List<Dong> trungTam(List<KhoanThu> khoan,List<HocPhiTrungTam> hocPhi) {
@@ -73,7 +78,8 @@ public final class TongHopThuPhi {
                 daGhep.add(k.maKhoan());found=true;
             }
             if(!found)result.add(chuaLap(h.maDangKy(),"HOC_PHI_KHOA",h.hocVien(),noiDung,
-                h.monHoc(),h.khoaHoc(),h.lopHoc(),h.goc(),h.giam(),h.phaiThu()));
+                h.monHoc(),h.khoaHoc(),h.lopHoc(),h.goc(),h.giam(),h.phaiThu(),
+                h.maHocVien(),h.soDienThoai()));
         }
         // Khoản thu còn hiệu lực nhưng nguồn đăng ký không còn trong danh sách vẫn phải thấy.
         for(KhoanThu k:khoan)if(!daGhep.contains(k.maKhoan()))
@@ -103,7 +109,7 @@ public final class TongHopThuPhi {
             daGhep.add(k.maKhoan());found=true;
         }
         if(!found&&amount.signum()>0)result.add(chuaLap(b.id(),loai,b.hocVien(),noiDung,
-            "","",b.ky(),amount,BigDecimal.ZERO,amount));
+            "","",b.ky(),amount,BigDecimal.ZERO,amount,0,null));
     }
 
     /** Các tổng này chỉ tính khoản đã lập, đang hiệu lực; không tính học phí dự kiến. */

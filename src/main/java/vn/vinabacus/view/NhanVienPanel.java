@@ -2,14 +2,19 @@ package vn.vinabacus.view;
 
 import java.awt.BorderLayout;
 import java.awt.Font;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.RowFilter;
 import javax.swing.table.TableRowSorter;
@@ -20,16 +25,21 @@ import java.time.format.DateTimeParseException;
 
 import javax.swing.JTextField;
 import javax.swing.JComboBox;
+import javax.swing.DefaultListCellRenderer;
 
 import vn.vinabacus.controller.NhanVienController;
+import vn.vinabacus.controller.LopTrungTamController;
 import vn.vinabacus.model.CoSo;
+import vn.vinabacus.model.ChiTietGiaoVienTrungTam;
 import vn.vinabacus.model.NhanVien;
+import vn.vinabacus.model.MonHoc;
 
 public class NhanVienPanel extends JPanel {
 
     private final JTable bangNhanVien;
     private final DefaultTableModel model;
     private final NhanVienController controller;
+    private List<NhanVien> danhSachHienTai = List.of();
 
     public NhanVienPanel(CoSo coSo) {
 
@@ -39,7 +49,9 @@ public class NhanVienPanel extends JPanel {
 
         // Tieu de giao dien
         JLabel tieuDe = new JLabel(
-                "DANH SACH NHAN VIEN - GIAO VIEN"
+                coSo == CoSo.TRUNG_TAM
+                        ? "NHÂN SỰ / GIÁO VIÊN – TRUNG TÂM"
+                        : "DANH SACH NHAN VIEN - GIAO VIEN"
         );
 
         tieuDe.setFont(new Font("Arial", Font.BOLD, 20));
@@ -77,6 +89,14 @@ public class NhanVienPanel extends JPanel {
         panelTimKiem.add(new JLabel("Trạng thái:"));
         panelTimKiem.add(cboLocTrangThai);
 
+        JComboBox<String> cboVaiTro = coSo == CoSo.TRUNG_TAM
+                ? new JComboBox<>(new String[]{"Tất cả vai trò", "Giáo viên",
+                        "Tổ trưởng", "Quản trị", "Chưa có vai trò"}) : null;
+        if (cboVaiTro != null) {
+            panelTimKiem.add(new JLabel("Vai trò đăng nhập:"));
+            panelTimKiem.add(cboVaiTro);
+        }
+
         thanhCongCu.add(
                 panelTimKiem,
                 BorderLayout.EAST
@@ -88,10 +108,19 @@ public class NhanVienPanel extends JPanel {
                 BorderLayout.CENTER
         );
 
+        if (coSo == CoSo.TRUNG_TAM) {
+            panelDau.add(new JLabel(
+                    "Vai trò tài khoản là quyền đăng nhập; chuyên môn giảng dạy được quản lý riêng."),
+                    BorderLayout.SOUTH);
+        }
+
         add(panelDau, BorderLayout.NORTH);
 
         // Cac cot trong bang
-        String[] tenCot = {
+        String[] tenCot = coSo == CoSo.TRUNG_TAM ? new String[]{
+            "Ma NV", "Ho ten", "Ngay sinh", "Gioi tinh", "So dien thoai",
+            "Email", "Trang thai", "Tai co so", "Vai trò tài khoản"
+        } : new String[]{
             "Ma NV",
             "Ho ten",
             "Ngay sinh",
@@ -154,6 +183,14 @@ public class NhanVienPanel extends JPanel {
                 );
             }
 
+            if (cboVaiTro != null && cboVaiTro.getSelectedIndex() > 0) {
+                String vaiTro = (String) cboVaiTro.getSelectedItem();
+                if ("Chưa có vai trò".equals(vaiTro))
+                    vaiTro = "Chưa có vai trò đăng nhập tại cơ sở";
+                danhSachLoc.add(RowFilter.regexFilter(
+                        "^" + Pattern.quote(vaiTro) + "$", 8));
+            }
+
             bangNhanVien.clearSelection();
 
             if (danhSachLoc.isEmpty()) {
@@ -168,6 +205,7 @@ public class NhanVienPanel extends JPanel {
         cboLocTrangThai.addActionListener(e -> {
             timKiem.run();
         });
+        if (cboVaiTro != null) cboVaiTro.addActionListener(e -> timKiem.run());
 
         txtTimKiem.getDocument().addDocumentListener(
                 new javax.swing.event.DocumentListener() {
@@ -304,9 +342,13 @@ public class NhanVienPanel extends JPanel {
         JButton btnSua = new JButton("Sửa nhân viên");
         JButton btnNgung = new JButton("Ngừng công tác");
         JButton btnTroLai = new JButton("Làm việc trở lại");
-// Tao khung chua 3 nut
+        JButton btnChiTiet = coSo == CoSo.TRUNG_TAM
+                ? new JButton("Chi tiết phân công") : null;
+        JButton btnChuyenMon = coSo == CoSo.TRUNG_TAM
+                ? new JButton("Chuyên môn GV") : null;
+// Tao khung chua cac nut
         JPanel panelNut = new JPanel(
-                new GridLayout(1, 4, 10, 0)
+                new GridLayout(1, coSo == CoSo.TRUNG_TAM ? 6 : 4, 10, 0)
         );
 
 // Them cac nut vao khung
@@ -314,16 +356,32 @@ public class NhanVienPanel extends JPanel {
         panelNut.add(btnSua);
         panelNut.add(btnNgung);
         panelNut.add(btnTroLai);
+        if (btnChiTiet != null) panelNut.add(btnChiTiet);
+        if (btnChuyenMon != null) panelNut.add(btnChuyenMon);
 // Tam khoa cac nut chua duoc chon
         btnSua.setEnabled(false);
         btnNgung.setEnabled(false);
         btnTroLai.setEnabled(false);
+        if (btnChiTiet != null) btnChiTiet.setEnabled(false);
+        if (btnChuyenMon != null) btnChuyenMon.setEnabled(false);
 // Hien thi cac nut phia duoi bang
 
         thanhCongCu.add(
                 panelNut,
-                BorderLayout.WEST
+                coSo == CoSo.TRUNG_TAM ? BorderLayout.SOUTH : BorderLayout.WEST
         );
+
+        if (btnChiTiet != null) {
+            btnChiTiet.addActionListener(e -> moChiTietPhanCong(coSo, btnChiTiet));
+            bangNhanVien.addMouseListener(new MouseAdapter() {
+                @Override public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() == 2 && bangNhanVien.getSelectedRow() >= 0)
+                        moChiTietPhanCong(coSo, btnChiTiet);
+                }
+            });
+        }
+        if (btnChuyenMon != null)
+            btnChuyenMon.addActionListener(e -> moChuyenMonGiaoVien(btnChuyenMon));
 
         bangNhanVien.getSelectionModel().addListSelectionListener(e -> {
 
@@ -336,11 +394,15 @@ public class NhanVienPanel extends JPanel {
                     btnSua.setEnabled(false);
                     btnNgung.setEnabled(false);
                     btnTroLai.setEnabled(false);
+                    if (btnChiTiet != null) btnChiTiet.setEnabled(false);
+                    if (btnChuyenMon != null) btnChuyenMon.setEnabled(false);
                     return;
                 }
 
                 // Cho phep sua nhan vien da chon
                 btnSua.setEnabled(true);
+                if (btnChiTiet != null) btnChiTiet.setEnabled(true);
+                if (btnChuyenMon != null) btnChuyenMon.setEnabled(true);
 
                 // Lay trang thai tu bang
                 String trangThaiNhanVien = String.valueOf(
@@ -683,22 +745,24 @@ public class NhanVienPanel extends JPanel {
             List<NhanVien> danhSach
                     = controller.layDanhSach(coSo);
 
+            danhSachHienTai = List.copyOf(danhSach);
+
             model.setRowCount(0);
 
             for (NhanVien nv : danhSach) {
 
-                Object[] dong = {
-                    nv.getMaNhanVien(),
-                    nv.getHoTen(),
-                    nv.getNgaySinh(),
-                    nv.getGioiTinh(),
-                    nv.getSoDienThoai(),
-                    nv.getEmail(),
-                    nv.isTrangThai()
-                    ? "Dang lam" : "Da nghi",
-                    nv.isTrangThaiTaiCoSo()
-                    ? "Dang cong tac" : "Ngung cong tac"
-                };
+                Object[] dong = new Object[coSo == CoSo.TRUNG_TAM ? 9 : 8];
+                dong[0] = nv.getMaNhanVien();
+                dong[1] = nv.getHoTen();
+                dong[2] = nv.getNgaySinh();
+                dong[3] = nv.getGioiTinh();
+                dong[4] = nv.getSoDienThoai();
+                dong[5] = nv.getEmail();
+                dong[6] = nv.isTrangThai() ? "Dang lam" : "Da nghi";
+                dong[7] = nv.isTrangThaiTaiCoSo() ? "Dang cong tac" : "Ngung cong tac";
+                if (coSo == CoSo.TRUNG_TAM)
+                    dong[8] = ChiTietGiaoVienTrungTamDialog.hienVaiTro(
+                            nv.getVaiTroTaiKhoan());
 
                 model.addRow(dong);
             }
@@ -713,5 +777,104 @@ public class NhanVienPanel extends JPanel {
                     JOptionPane.ERROR_MESSAGE
             );
         }
+    }
+
+    private void moChiTietPhanCong(CoSo coSo, JButton nut) {
+        if (!nut.isEnabled()) return;
+        int dong = bangNhanVien.getSelectedRow();
+        if (dong < 0) return;
+        int maNhanVien = ((Number) bangNhanVien.getValueAt(dong, 0)).intValue();
+        NhanVien chon = danhSachHienTai.stream()
+                .filter(nv -> nv.getMaNhanVien() == maNhanVien).findFirst().orElse(null);
+        if (chon == null) return;
+        nut.setEnabled(false);
+        new SwingWorker<ChiTietGiaoVienTrungTam, Void>() {
+            @Override protected ChiTietGiaoVienTrungTam doInBackground() throws Exception {
+                return controller.chiTietPhanCongTrungTam(coSo, maNhanVien);
+            }
+            @Override protected void done() {
+                nut.setEnabled(bangNhanVien.getSelectedRow() >= 0);
+                try {
+                    ChiTietGiaoVienTrungTam duLieu = get();
+                    new ChiTietGiaoVienTrungTamDialog(
+                            SwingUtilities.getWindowAncestor(NhanVienPanel.this), chon, duLieu)
+                            .setVisible(true);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    JOptionPane.showMessageDialog(NhanVienPanel.this,
+                            "Việc tải chi tiết bị gián đoạn.", "Chi tiết phân công",
+                            JOptionPane.ERROR_MESSAGE);
+                } catch (ExecutionException ex) {
+                    JOptionPane.showMessageDialog(NhanVienPanel.this,
+                            ex.getCause() == null ? ex.getMessage() : ex.getCause().getMessage(),
+                            "Không tải được phân công", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }.execute();
+    }
+
+    private void moChuyenMonGiaoVien(JButton nut) {
+        int dong=bangNhanVien.getSelectedRow();
+        if(dong<0)return;
+        int maNhanVien=((Number)bangNhanVien.getValueAt(dong,0)).intValue();
+        LopTrungTamController lop=new LopTrungTamController(CoSo.TRUNG_TAM);
+        List<MonHoc> mon;
+        try { mon=lop.layMonHoc(); }
+        catch(SQLException ex) {
+            JOptionPane.showMessageDialog(this,ex.getMessage(),"Không tải được môn",JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        JComboBox<MonHoc> cboMon=new JComboBox<>();
+        for(MonHoc m:mon)cboMon.addItem(m);
+        cboMon.setRenderer(new DefaultListCellRenderer() {
+            @Override public java.awt.Component getListCellRendererComponent(
+                    javax.swing.JList<?> list,Object value,int index,boolean selected,boolean focus) {
+                super.getListCellRendererComponent(list,value,index,selected,focus);
+                if(value instanceof MonHoc m)setText(m.tenMonHoc()
+                        +(m.trangThai()?"":" (ngừng sử dụng)"));
+                return this;
+            }
+        });
+        JComboBox<String> thaoTac=new JComboBox<>(new String[]{
+            "Khai báo chuyên môn mới","Kết thúc chuyên môn hiện tại"});
+        JTextField lyDo=new JTextField(26);
+        JPanel p=new JPanel(new GridLayout(0,2,8,8));
+        p.add(new JLabel("Giáo viên"));p.add(new JLabel(
+                String.valueOf(bangNhanVien.getValueAt(dong,1))));
+        p.add(new JLabel("Thao tác"));p.add(thaoTac);
+        p.add(new JLabel("Môn học"));p.add(cboMon);
+        p.add(new JLabel("Hiệu lực"));p.add(new JLabel("Từ hôm nay: "+LocalDate.now()));
+        p.add(new JLabel("Lý do (*)"));p.add(lyDo);
+        if(JOptionPane.showConfirmDialog(this,p,"Chuyên môn giáo viên",
+                JOptionPane.OK_CANCEL_OPTION,JOptionPane.PLAIN_MESSAGE)!=JOptionPane.OK_OPTION)return;
+        MonHoc m=(MonHoc)cboMon.getSelectedItem();
+        if(m==null || lyDo.getText().isBlank() || lyDo.getText().trim().length()>500) {
+            JOptionPane.showMessageDialog(this,"Hãy chọn môn và nhập lý do 1–500 ký tự.");return;
+        }
+        boolean them=thaoTac.getSelectedIndex()==0;
+        if(them && !m.trangThai()) {
+            JOptionPane.showMessageDialog(this,"Môn đang ngừng sử dụng; không thể khai báo mới.");return;
+        }
+        nut.setEnabled(false);
+        new SwingWorker<Void,Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                if(them)lop.themChuyenMonGiaoVien(maNhanVien,m.maMonHoc(),
+                        LocalDate.now(),lyDo.getText().trim());
+                else lop.ketThucChuyenMonGiaoVien(maNhanVien,m.maMonHoc(),
+                        LocalDate.now(),lyDo.getText().trim());
+                return null;
+            }
+            @Override protected void done() {
+                nut.setEnabled(bangNhanVien.getSelectedRow()>=0);
+                try { get();JOptionPane.showMessageDialog(NhanVienPanel.this,
+                        "Đã lưu thay đổi chuyên môn giáo viên."); }
+                catch(InterruptedException ex) {Thread.currentThread().interrupt();}
+                catch(ExecutionException ex) {
+                    JOptionPane.showMessageDialog(NhanVienPanel.this,
+                            ex.getCause()==null?ex.getMessage():ex.getCause().getMessage(),
+                            "Không thể đổi chuyên môn",JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }.execute();
     }
 }

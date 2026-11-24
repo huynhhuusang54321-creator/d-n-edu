@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.time.LocalDate;
 import vn.vinabacus.model.CoSo;
+import vn.vinabacus.model.ChiTietGiaoVienTrungTam;
 import vn.vinabacus.model.NhanVien;
 import vn.vinabacus.service.NhanVienService;
 
@@ -19,6 +20,11 @@ public class NhanVienController {
             throws SQLException {
 
         return service.layDanhSach(coSo);
+    }
+
+    public ChiTietGiaoVienTrungTam chiTietPhanCongTrungTam(
+            CoSo coSo, int maNhanVien) throws SQLException {
+        return service.chiTietPhanCongTrungTam(coSo, maNhanVien);
     }
 
     public int themNhanVien(

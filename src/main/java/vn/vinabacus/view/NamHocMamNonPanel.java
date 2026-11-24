@@ -10,6 +10,7 @@ import javax.swing.table.DefaultTableModel;
 import vn.vinabacus.controller.MamNonController;
 import vn.vinabacus.model.LopMamNon;
 import vn.vinabacus.model.NamHocMamNon;
+import vn.vinabacus.model.XepLopMamNon;
 import vn.vinabacus.repository.MamNonRepository.KetQuaSaoChep;
 import vn.vinabacus.tv4.NamHocMacDinh;
 
@@ -19,11 +20,14 @@ import vn.vinabacus.tv4.NamHocMacDinh;
 public final class NamHocMamNonPanel extends JPanel {
 
     private final MamNonController ctrl = new MamNonController();
-    private final DefaultTableModel m = MamNonUi.model("Mã", "Năm học", "Từ ngày", "Đến ngày", "Mặc định");
+    private final DefaultTableModel m = MamNonUi.model("Mã", "Năm học", "Từ ngày", "Đến ngày", "Trạng thái", "Số lớp", "Đang học", "Mặc định");
     private final JTable table = MamNonUi.bang(m);
     private final JTextField search = new JTextField(18);
     private final JLabel status = new JLabel("Sẵn sàng");
     private List<NamHocMamNon> years = List.of();
+    private List<LopMamNon> allClasses=List.of();
+    private List<XepLopMamNon> allPlacements=List.of();
+    private record YearData(List<NamHocMamNon> years,List<LopMamNon> classes,List<XepLopMamNon> placements){}
     private final PropertyChangeListener yearListener = e -> SwingUtilities.invokeLater(this::filter);
 
     public NamHocMamNonPanel() {
@@ -115,10 +119,17 @@ public final class NamHocMamNonPanel extends JPanel {
             old = (int) m.getValueAt(table.convertRowIndexToModel(row), 0);
         }
         String q = search.getText().trim().toLowerCase();
+        LocalDate today=LocalDate.now();
         m.setRowCount(0);
         for (NamHocMamNon y : years) {
             if (y.tenNamHoc().toLowerCase().contains(q)) {
-                m.addRow(new Object[]{y.maNamHoc(), y.tenNamHoc(), y.tuNgay(), y.denNgay(),
+                java.util.Set<Integer> ids=new java.util.HashSet<>();
+                for(LopMamNon l:allClasses)if(l.maNamHoc()==y.maNamHoc())ids.add(l.maLop());
+                long active=allPlacements.stream().filter(x->ids.contains(x.maLop())&&"HIEU_LUC".equals(x.trangThai())
+                    &&!today.isBefore(y.tuNgay())&&!today.isAfter(y.denNgay())
+                    &&!today.isBefore(x.tuNgay())&&(x.denNgay()==null||!today.isAfter(x.denNgay()))).count();
+                String state=today.isBefore(y.tuNgay())?"Sắp bắt đầu":today.isAfter(y.denNgay())?"Đã kết thúc":"Trong thời gian";
+                m.addRow(new Object[]{y.maNamHoc(), y.tenNamHoc(), y.tuNgay(), y.denNgay(),state,ids.size(),active,
                     NamHocMacDinh.maDaChon() == y.maNamHoc() ? "Đang chọn" : ""});
             }
         }
@@ -134,8 +145,8 @@ public final class NamHocMamNonPanel extends JPanel {
     }
 
     private void load() {
-        MamNonUi.tai(this, ctrl::namHoc, list -> {
-            years = list;
+        MamNonUi.tai(this, ()->new YearData(ctrl.namHoc(),ctrl.lop(null,""),ctrl.xepLop(null)), result -> {
+            years = result.years();allClasses=result.classes();allPlacements=result.placements();
             filter();
         });
     }
@@ -182,7 +193,7 @@ public final class NamHocMamNonPanel extends JPanel {
             JPanel form = new JPanel(new BorderLayout(8, 8));
             form.add(MamNonUi.dong(new JLabel("Năm học nguồn: " + source.tenNamHoc()), new JLabel("Năm học mới:"), target), BorderLayout.NORTH);
             form.add(scroll, BorderLayout.CENTER);
-            form.add(new JLabel("Chỉ sao chép tên lớp; không chuyển học sinh, giáo viên hay điểm danh."), BorderLayout.SOUTH);
+            form.add(new JLabel("Sao chép tên, khối và sĩ số nếu đã cấu hình; không chuyển học sinh, giáo viên hay điểm danh."), BorderLayout.SOUTH);
             if (!MamNonUi.xacNhan(this, form, "Chọn lớp chuyển sang năm học mới", false)) {
                 return;
             }

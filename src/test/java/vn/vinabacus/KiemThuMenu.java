@@ -17,7 +17,10 @@ public final class KiemThuMenu {
         for (CoSo coSo : CoSo.values()) {
             controller.chonCoSo(coSo);
             var ds = controller.layMenu();
-            if (ds.size() != (coSo == CoSo.TRUNG_TAM ? 15 : 13)) throw new AssertionError("Sai so menu: " + coSo);
+            if (ds.size() != (coSo == CoSo.TRUNG_TAM ? 16 : 13)) throw new AssertionError("Sai so menu: " + coSo);
+            if (coSo == CoSo.TRUNG_TAM && (!"tt-khoa-hoc".equals(ds.get(5).ma())
+                    || !"tt-giam-gia".equals(ds.get(6).ma())))
+                throw new AssertionError("Menu giảm giá phải nằm ngay sau Khóa học");
             Set<String> ids = new HashSet<>();
             for (MucMenu m : ds) {
                 if (!ids.add(m.ma())) throw new AssertionError("Trung ma menu: " + m.ma());

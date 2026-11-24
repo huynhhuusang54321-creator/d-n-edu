@@ -9,3 +9,4 @@
 # Khong dua mat khau SQL len Git
 /db.local.properties
 **/db.local.properties
+/VINABACUS/VINABACUS/target/

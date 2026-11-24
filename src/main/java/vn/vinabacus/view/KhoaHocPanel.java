@@ -1,9 +1,13 @@
 package vn.vinabacus.view;
 
 import java.awt.BorderLayout;
+import java.awt.Dialog;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.Window;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -14,12 +18,14 @@ import javax.swing.DefaultComboBoxModel;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
@@ -27,7 +33,9 @@ import javax.swing.SwingWorker;
 import javax.swing.table.DefaultTableModel;
 import vn.vinabacus.controller.KhoaHocController;
 import vn.vinabacus.model.CoSo;
+import vn.vinabacus.model.DangKyKhoaHoc;
 import vn.vinabacus.model.KhoaHoc;
+import vn.vinabacus.model.LopTrungTam;
 import vn.vinabacus.model.MonHoc;
 
 /**
@@ -38,11 +46,16 @@ public final class KhoaHocPanel extends JPanel {
     private final KhoaHocController controller = new KhoaHocController(CoSo.TRUNG_TAM);
     private final JTextField txtTim = new JTextField(18);
     private final JComboBox<String> locTrangThai = new JComboBox<>(new String[]{
-            "Tất cả", "Hoạt động", "Ngừng sử dụng"
+            "Tất cả", "Đang tuyển sinh", "Ngừng tuyển sinh"
     });
     private final JTabbedPane tabMonHoc = new JTabbedPane();
     private final JLabel thongBao = new JLabel("Sẵn sàng");
+    private final JButton btnSua = new JButton("Sửa khóa");
+    private final JButton btnChiTiet = new JButton("Chi tiết khóa");
+    private final JButton btnTrangThai = new JButton("Ngừng / kích hoạt");
     private final List<BangTheoMon> cacBang = new ArrayList<>();
+    private List<MonHoc> tatCaMon = List.of();
+    private List<LopTrungTam> tatCaLop = List.of();
     private int lanTaiDuLieu = 0;
     private Integer monCanChonSauLuu;
 
@@ -56,7 +69,8 @@ public final class KhoaHocPanel extends JPanel {
         BangTheoMon(int maMonHoc) {
             this.maMonHoc = maMonHoc;
             model = new DefaultTableModel(new String[]{
-                    "Tên khóa học", "Số buổi", "Học phí mặc định", "Trạng thái"
+                    "Mã khóa", "Môn học", "Tên khóa học", "Số buổi",
+                    "Học phí hiện hành", "Số lớp", "Trạng thái"
             }, 0) {
                 @Override public boolean isCellEditable(int row, int column) { return false; }
             };
@@ -64,15 +78,23 @@ public final class KhoaHocPanel extends JPanel {
             bang.setRowHeight(30);
             bang.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             bang.setAutoCreateRowSorter(true);
-            bang.getColumnModel().getColumn(0).setPreferredWidth(280);
-            bang.getColumnModel().getColumn(1).setPreferredWidth(85);
-            bang.getColumnModel().getColumn(2).setPreferredWidth(160);
-            bang.getColumnModel().getColumn(3).setPreferredWidth(125);
+            bang.getColumnModel().getColumn(2).setPreferredWidth(240);
+            bang.getColumnModel().getColumn(4).setPreferredWidth(150);
+            bang.addMouseListener(new MouseAdapter() {
+                @Override public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() == 2 && bang.getSelectedRow() >= 0) {
+                        KhoaHocPanel owner = (KhoaHocPanel) javax.swing.SwingUtilities
+                                .getAncestorOfClass(KhoaHocPanel.class, bang);
+                        if (owner != null) owner.moChiTiet();
+                    }
+                }
+            });
         }
     }
 
     /** Kết quả lấy đồng thời các môn và khóa học, tránh tab thiếu môn chưa có khóa. */
-    private record DuLieu(List<MonHoc> monHoc, List<KhoaHoc> khoaHoc) { }
+    private record DuLieu(List<MonHoc> monHoc, List<KhoaHoc> khoaHoc,
+                          List<LopTrungTam> lopHoc) { }
 
     public KhoaHocPanel() {
         super(new BorderLayout(10, 10));
@@ -80,23 +102,28 @@ public final class KhoaHocPanel extends JPanel {
         JLabel tieuDe = new JLabel("QUẢN LÝ KHÓA HỌC – TRUNG TÂM");
         tieuDe.setFont(tieuDe.getFont().deriveFont(Font.BOLD, 22f));
 
-        JPanel hangNut = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
+        JPanel thanhCongCu = new JPanel(new GridLayout(2, 1, 0, 2));
+        JPanel hangLoc = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 3));
+        JPanel hangNut = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 3));
         JButton btnTim = new JButton("Tìm kiếm");
         JButton btnTaiLai = new JButton("Tải lại");
-        JButton btnThem = new JButton("Thêm");
-        JButton btnSua = new JButton("Sửa");
-        hangNut.add(new JLabel("Tên khóa học:"));
-        hangNut.add(txtTim);
-        hangNut.add(new JLabel("Trạng thái:"));
-        hangNut.add(locTrangThai);
-        hangNut.add(btnTim);
-        hangNut.add(btnTaiLai);
+        JButton btnThem = new JButton("Thêm khóa");
+        hangLoc.add(new JLabel("Mã / tên khóa:"));
+        hangLoc.add(txtTim);
+        hangLoc.add(new JLabel("Trạng thái:"));
+        hangLoc.add(locTrangThai);
+        hangLoc.add(btnTim);
+        hangLoc.add(btnTaiLai);
         hangNut.add(btnThem);
         hangNut.add(btnSua);
+        hangNut.add(btnChiTiet);
+        hangNut.add(btnTrangThai);
+        thanhCongCu.add(hangLoc);
+        thanhCongCu.add(hangNut);
 
         JPanel dau = new JPanel(new BorderLayout(6, 8));
         dau.add(tieuDe, BorderLayout.NORTH);
-        dau.add(hangNut, BorderLayout.CENTER);
+        dau.add(thanhCongCu, BorderLayout.CENTER);
         add(dau, BorderLayout.NORTH);
         add(tabMonHoc, BorderLayout.CENTER);
         add(thongBao, BorderLayout.SOUTH);
@@ -114,9 +141,23 @@ public final class KhoaHocPanel extends JPanel {
             KhoaHoc chon = khoaDuocChon();
             if (chon != null) moForm(chon);
         });
+        btnChiTiet.addActionListener(e -> moChiTiet());
+        btnTrangThai.addActionListener(e -> doiTrangThai());
         // Khi người dùng đổi tab, chỉ cập nhật bộ đếm; không truy vấn SQL không cần thiết.
         tabMonHoc.addChangeListener(e -> capNhatThongBaoTab());
+        capNhatNut();
         SwingUtilities.invokeLater(this::taiDuLieu);
+    }
+
+    /** Mở đúng tab môn khi màn hình được gọi từ chi tiết môn học. */
+    public void chonMonHoc(int maMonHoc) {
+        monCanChonSauLuu = maMonHoc;
+        for (int i = 0; i < cacBang.size(); i++) {
+            if (cacBang.get(i).maMonHoc == maMonHoc) {
+                tabMonHoc.setSelectedIndex(i);
+                break;
+            }
+        }
     }
 
     private Boolean trangThaiLoc() {
@@ -140,18 +181,22 @@ public final class KhoaHocPanel extends JPanel {
         thongBao.setText("Đang tải dữ liệu...");
         new SwingWorker<DuLieu, Void>() {
             @Override protected DuLieu doInBackground() throws Exception {
-                return new DuLieu(controller.layMonHoc(), controller.timKiem(tim, trangThai));
+                return new DuLieu(controller.layMonHoc(), controller.timKiem(tim, trangThai),
+                        controller.layLopHoc());
             }
             @Override protected void done() {
                 if (luotTai != lanTaiDuLieu) return; // bỏ kết quả của lần tìm cũ
                 try {
                     DuLieu dl = get();
+                    tatCaMon = dl.monHoc();
+                    tatCaLop = dl.lopHoc();
                     int maMonMucTieu = monCanChonSauLuu != null
                             ? monCanChonSauLuu : maMonTruoc;
                     hienThiTheoMon(dl.monHoc(), dl.khoaHoc(), maMonMucTieu);
                     monCanChonSauLuu = null;
                 } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt(); hienLoi(ex);
+                    Thread.currentThread().interrupt(); thongBao.setText("Tải dữ liệu bị gián đoạn");
+                    hienLoi(ex);
                 } catch (ExecutionException ex) { hienLoi(ex); }
             }
         }.execute();
@@ -163,35 +208,49 @@ public final class KhoaHocPanel extends JPanel {
         tabMonHoc.removeAll();
         int viTriCanChon = -1;
         for (MonHoc mon : mons) {
-            if (!mon.trangThai()) continue; // Môn ngừng sử dụng không xuất hiện trên tab.
             BangTheoMon nhom = new BangTheoMon(mon.maMonHoc());
+            nhom.bang.getSelectionModel().addListSelectionListener(e -> capNhatNut());
             for (KhoaHoc k : khoas) {
                 if (k.maMonHoc() != mon.maMonHoc()) continue;
                 nhom.khoaHoc.add(k);
+                long soLop = tatCaLop.stream()
+                        .filter(l -> l.maKhoaHoc() == k.maKhoaHoc()).count();
                 nhom.model.addRow(new Object[]{
-                        k.tenKhoaHoc(), k.tongSoBuoi(),
+                        k.maKhoaHoc(), k.tenMonHoc(), k.tenKhoaHoc(), k.tongSoBuoi(),
                         k.hocPhiMacDinh().stripTrailingZeros().toPlainString(),
-                        k.trangThai() ? "Hoạt động" : "Ngừng sử dụng"
+                        soLop, k.trangThai() ? "Đang tuyển sinh" : "Ngừng tuyển sinh"
                 });
             }
-            String tenTab = mon.tenMonHoc() + " (" + nhom.khoaHoc.size() + ")";
+            String tenTab = mon.tenMonHoc() + (mon.trangThai() ? "" : " (ngừng)")
+                    + " (" + nhom.khoaHoc.size() + ")";
             cacBang.add(nhom);
             tabMonHoc.addTab(tenTab, new JScrollPane(nhom.bang));
             if (mon.maMonHoc() == monMuonChon) viTriCanChon = cacBang.size() - 1;
         }
         if (viTriCanChon >= 0) tabMonHoc.setSelectedIndex(viTriCanChon);
         if (cacBang.isEmpty()) {
-            thongBao.setText("Không có môn học đang hoạt động. Bật lại môn học tại mục Môn học để hiển thị tab.");
+            thongBao.setText("Chưa có môn học. Hãy thêm môn trước khi tạo khóa.");
         } else {
             capNhatThongBaoTab();
         }
+        capNhatNut();
     }
 
     private void capNhatThongBaoTab() {
         int pos = tabMonHoc.getSelectedIndex();
-        if (pos < 0 || pos >= cacBang.size()) return;
+        if (pos < 0 || pos >= cacBang.size()) { capNhatNut(); return; }
         BangTheoMon tab = cacBang.get(pos);
         thongBao.setText("Có " + tab.khoaHoc.size() + " khóa học trong môn đang chọn");
+        capNhatNut();
+    }
+
+    private void capNhatNut() {
+        int pos = tabMonHoc.getSelectedIndex();
+        boolean coChon = pos >= 0 && pos < cacBang.size()
+                && cacBang.get(pos).bang.getSelectedRow() >= 0;
+        btnSua.setEnabled(coChon);
+        btnChiTiet.setEnabled(coChon);
+        btnTrangThai.setEnabled(coChon);
     }
 
     private KhoaHoc khoaDuocChon() {
@@ -209,14 +268,135 @@ public final class KhoaHocPanel extends JPanel {
         return nhom.khoaHoc.get(nhom.bang.convertRowIndexToModel(row));
     }
 
-    private void moForm(KhoaHoc cu) {
-        // Mon hoc da ngung su dung van xuat hien khi sua khoa hoc cu cua chinh mon do.
-        final List<MonHoc> cacMon;
-        try {
-            cacMon = controller.layMonHoc();
-        } catch (SQLException ex) {
-            hienLoi(ex); return;
+    private void doiTrangThai() {
+        KhoaHoc khoa = khoaDuocChon();
+        if (khoa == null) return;
+        String viec = khoa.trangThai() ? "ngừng tuyển sinh" : "kích hoạt tuyển sinh";
+        if (JOptionPane.showConfirmDialog(this,
+                "Xác nhận " + viec + " khóa '" + khoa.tenKhoaHoc() + "'?\n"
+                + "Đăng ký và học phí đã chốt trước đây vẫn được giữ nguyên.",
+                "Trạng thái khóa học", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+        thongBao.setText("Đang cập nhật trạng thái...");
+        new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                controller.sua(khoa.maKhoaHoc(), khoa.maMonHoc(), khoa.tenKhoaHoc(),
+                        khoa.tongSoBuoi(), khoa.hocPhiMacDinh(), !khoa.trangThai());
+                return null;
+            }
+            @Override protected void done() {
+                try { get(); taiDuLieu(); }
+                catch (InterruptedException ex) { Thread.currentThread().interrupt(); hienLoi(ex); }
+                catch (ExecutionException ex) { hienLoi(ex); }
+            }
+        }.execute();
+    }
+
+    private void moChiTiet() {
+        KhoaHoc khoa = khoaDuocChon();
+        if (khoa == null) return;
+        JTabbedPane noiDung = new JTabbedPane();
+        JTextArea thongTin = new JTextArea("Mã khóa: " + khoa.maKhoaHoc()
+                + "\nMôn học: " + khoa.tenMonHoc()
+                + "\nTên khóa: " + khoa.tenKhoaHoc()
+                + "\nSố buổi: " + khoa.tongSoBuoi()
+                + "\nHọc phí niêm yết hiện tại: " + khoa.hocPhiMacDinh()
+                + "\nTrạng thái: " + (khoa.trangThai() ? "Đang tuyển sinh" : "Ngừng tuyển sinh")
+                + "\n\nHọc phí, giảm giá và phiếu thu của đăng ký cũ không thay đổi khi sửa khóa.");
+        thongTin.setEditable(false);
+        thongTin.setBorder(BorderFactory.createEmptyBorder(14, 14, 14, 14));
+        noiDung.addTab("Thông tin khóa", new JScrollPane(thongTin));
+
+        DefaultTableModel modelLop = new DefaultTableModel(new String[]{
+                "Mã lớp", "Tên lớp", "Giáo viên", "Phòng theo lịch",
+                "Sĩ số", "Tối đa", "Ngày khai giảng", "Trạng thái"}, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+        for (LopTrungTam l : tatCaLop) {
+            if (l.maKhoaHoc() != khoa.maKhoaHoc()) continue;
+            modelLop.addRow(new Object[]{l.maLop(), l.tenLop(), l.tenGiaoVien(),
+                    l.tenPhong() == null ? "Chưa gán" : l.tenPhong(),
+                    l.siSoHienTai(), l.siSoToiDa() == null ? "Chưa đặt" : l.siSoToiDa(),
+                    NgayKhaiGiangPicker.hienThiNgay(l.ngayKhaiGiang()), l.trangThai()});
         }
+        JTable bangLop = new JTable(modelLop);
+        bangLop.setRowHeight(28);
+        bangLop.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        bangLop.getColumnModel().getColumn(1).setPreferredWidth(170);
+        bangLop.getColumnModel().getColumn(2).setPreferredWidth(160);
+        bangLop.getColumnModel().getColumn(3).setPreferredWidth(170);
+        noiDung.addTab("Danh sách lớp (" + modelLop.getRowCount() + ")",
+                new JScrollPane(bangLop));
+
+        DefaultTableModel modelDangKy = new DefaultTableModel(new String[]{
+                "Mã ĐK", "Mã HV", "Học viên", "Lớp", "Trạng thái"}, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+        JTable bangDangKy = new JTable(modelDangKy);
+        bangDangKy.setRowHeight(28);
+        JLabel trangThai = new JLabel("Đang tải đăng ký...");
+        JPanel tabDangKy = new JPanel(new BorderLayout(5, 5));
+        tabDangKy.add(trangThai, BorderLayout.NORTH);
+        tabDangKy.add(new JScrollPane(bangDangKy), BorderLayout.CENTER);
+        noiDung.addTab("Học viên đăng ký", tabDangKy);
+        new SwingWorker<List<DangKyKhoaHoc>, Void>() {
+            @Override protected List<DangKyKhoaHoc> doInBackground() throws Exception {
+                return controller.dangKyCuaKhoa(khoa.maKhoaHoc());
+            }
+            @Override protected void done() {
+                try {
+                    List<DangKyKhoaHoc> ds = get();
+                    for (DangKyKhoaHoc d : ds) modelDangKy.addRow(new Object[]{
+                            d.maDangKy(), d.maHocVien(), d.hoTen(),
+                            d.tenLop() == null ? "Chờ xếp lớp" : d.tenLop(), d.trangThai()});
+                    trangThai.setText(ds.isEmpty() ? "Khóa chưa có đăng ký."
+                            : "Có " + ds.size() + " đăng ký, gồm cả lịch sử đã hoàn thành.");
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt(); trangThai.setText("Tải dữ liệu bị gián đoạn.");
+                } catch (ExecutionException ex) {
+                    trangThai.setText("Không tải được đăng ký: " + ex.getCause().getMessage());
+                }
+            }
+        }.execute();
+
+        JPanel chinh = new JPanel(new BorderLayout(8, 8));
+        chinh.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        chinh.add(noiDung, BorderLayout.CENTER);
+        JButton quanLyLop = new JButton("Quản lý lớp của khóa");
+        JPanel cuoi = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        cuoi.add(quanLyLop);
+        chinh.add(cuoi, BorderLayout.SOUTH);
+        Window owner = SwingUtilities.getWindowAncestor(this);
+        JDialog dialog = new JDialog(owner, "Chi tiết khóa học", Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.setContentPane(chinh);
+        dialog.setSize(850, 540);
+        dialog.setLocationRelativeTo(this);
+        quanLyLop.addActionListener(e -> {
+            JDialog lopDialog = new JDialog(dialog, "Lớp của " + khoa.tenKhoaHoc(), true);
+            LopTrungTamPanel panel = new LopTrungTamPanel();
+            panel.chonKhoaHoc(khoa.maMonHoc(), khoa.maKhoaHoc());
+            lopDialog.setContentPane(panel);
+            lopDialog.setSize(1100, 650);
+            lopDialog.setLocationRelativeTo(dialog);
+            lopDialog.setVisible(true);
+            taiDuLieu();
+            dialog.dispose();
+        });
+        dialog.setVisible(true);
+    }
+
+    private void moForm(KhoaHoc cu) {
+        if (cu == null) {
+            int maMon = maMonTabDangChon();
+            boolean monNgung = tatCaMon.stream()
+                    .anyMatch(m -> m.maMonHoc() == maMon && !m.trangThai());
+            if (monNgung) {
+                JOptionPane.showMessageDialog(this,
+                        "Môn đang ngừng sử dụng. Hãy kích hoạt môn trước khi thêm khóa.");
+                return;
+            }
+        }
+        // Mon hoc da ngung su dung van xuat hien khi sua khoa hoc cu cua chinh mon do.
+        final List<MonHoc> cacMon = tatCaMon;
         List<MonHoc> luaChon = new ArrayList<>();
         for (MonHoc mon : cacMon) {
             if (mon.trangThai() || (cu != null && mon.maMonHoc() == cu.maMonHoc())) {

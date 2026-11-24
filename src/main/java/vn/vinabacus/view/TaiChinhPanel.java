@@ -12,9 +12,12 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.TreeSet;
 import javax.swing.*;
@@ -27,6 +30,7 @@ import javax.swing.table.TableRowSorter;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.plaf.basic.BasicTabbedPaneUI;
 import vn.vinabacus.controller.TaiChinhController;
+import vn.vinabacus.controller.MamNonController;
 import vn.vinabacus.model.CoSo;
 import vn.vinabacus.model.TaiChinhDTO;
 import vn.vinabacus.model.TongHopThuPhi;
@@ -39,29 +43,38 @@ import vn.vinabacus.service.TaiChinhService;
  * Không thay đổi cơ chế ghi sổ hoặc cơ sở dữ liệu của dự án.
  */
 public final class TaiChinhPanel extends JPanel {
+    private static final DateTimeFormatter NGAY_GIO=DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private final CoSo coSo;
     private final TaiChinhController ctrl=new TaiChinhController();
+    private final MamNonController mamNonCtrl=new MamNonController();
     private final JTextField thang=new JTextField(8),search=new JTextField(16);
     private final JLabel status=new JLabel("Đang chờ dữ liệu...");
-    private final DefaultTableModel mThuPhi=TaiChinhUi.model("Mã / Nguồn","Học viên","Nội dung","Phải thu","Đã đóng","Còn nợ","Hạn","Trạng thái","Thao tác");
+    private final DefaultTableModel mThuPhi=TaiChinhUi.model("Mã HV / Nguồn","Học viên","Nội dung","Phải thu","Đã đóng","Còn nợ","Hạn","Trạng thái","Thao tác");
     private final JTable tThuPhi=TaiChinhUi.bang(mThuPhi);
     private final DefaultTableModel mTienAn=TaiChinhUi.model("Nguồn","Học viên / Lớp",
         "Kỳ / Áp dụng","Số tiền","Loại");
     private final JTable tTienAn=TaiChinhUi.bang(mTienAn);
     private final JComboBox<String> cbTrangThai=new JComboBox<>(new String[]{"Tất cả trạng thái",
         TongHopThuPhi.CHUA_LAP,TongHopThuPhi.CHUA_DONG,TongHopThuPhi.MOT_PHAN,
-        TongHopThuPhi.DA_DONG,TongHopThuPhi.DA_HUY,TongHopThuPhi.MIEN_PHI});
+        TongHopThuPhi.DA_DONG,TongHopThuPhi.THU_VUOT,TongHopThuPhi.DA_HUY,TongHopThuPhi.MIEN_PHI});
     private final JComboBox<String> cbLoai=new JComboBox<>(new String[]{"Tất cả loại","Học phí khóa","Học phí tháng","Tiền ăn"});
     private final JComboBox<String> cbMon=new JComboBox<>(new String[]{"Tất cả môn"});
     private final JComboBox<String> cbKhoa=new JComboBox<>(new String[]{"Tất cả khóa"});
     private final JComboBox<String> cbLop=new JComboBox<>(new String[]{"Tất cả lớp"});
-    private final JLabel[] thongKe=new JLabel[6],tongQuan=new JLabel[4];
+    private final JLabel[] thongKe=new JLabel[9],tongQuan=new JLabel[4];
+    private final JTextField reportFrom=new JTextField(9),reportTo=new JTextField(9);
+    private final JComboBox<String> reportGroup=new JComboBox<>(new String[]{
+        "Theo ngày","Theo tháng","Theo khóa / khoản","Theo nhân viên thu"});
+    private final DefaultTableModel mBaoCao=TaiChinhUi.model("Nhóm","Phân bổ ròng");
+    private final JTable tBaoCao=TaiChinhUi.bang(mBaoCao);
+    private final JLabel reportTotal=new JLabel("Chưa có dữ liệu phân bổ.");
     private final JLabel visibleCount=new JLabel("0 khoản thu"), pageText=new JLabel("Trang 1/1");
     private final JLabel summaryText=new JLabel("Chọn một khoản thu để xem chi tiết hoặc lập phiếu.");
     private JButton btnCreate,btnAdjust,btnReceipt,btnDetail,btnPrev,btnNext;
     private int currentPage=0;
     private static final int PAGE_SIZE=15;
     private List<TaiChinhDTO.KhoanThu> khoan=List.of();
+    private List<TaiChinhDTO.DongThuBaoCao> reportRows=List.of();
     private List<TaiChinhDTO.HocPhiTrungTam> hocPhi=List.of();
     private List<TaiChinhDTO.MucPhi> phi=List.of();
     private List<TaiChinhDTO.DangKyChuaThu> dangKy=List.of();
@@ -92,10 +105,10 @@ public final class TaiChinhPanel extends JPanel {
         topArea.add(titleBar,BorderLayout.NORTH);
         JPanel navigation=TaiChinhUi.hang();
         String[] tabNames=coSo==CoSo.MAM_NON
-            ?new String[]{"Danh sách thu phí","Phiếu thu","Tiền ăn","Báo cáo"}
+            ?new String[]{"Danh sách thu phí","Phiếu thu","Tiền ăn","Tính phí tháng","Báo cáo"}
             :new String[]{"Danh sách thu phí","Phiếu thu","Báo cáo"};
         String[] tabIcons=coSo==CoSo.MAM_NON
-            ?new String[]{"money","check","calendar","chart"}
+            ?new String[]{"money","check","calendar","calendar","chart"}
             :new String[]{"money","check","chart"};
         for(int i=0;i<tabNames.length;i++){
             final int index=i;
@@ -122,13 +135,15 @@ public final class TaiChinhPanel extends JPanel {
         tabs.addTab("Quản lý thu phí",thuPhiTab);
         tabs.addTab("Phiếu thu",phieu);
         if(coSo==CoSo.MAM_NON)tabs.addTab("Tiền ăn",tabTienAn());
+        if(coSo==CoSo.MAM_NON)tabs.addTab("Tính phí tháng",new TinhPhiMamNonPanel());
         tabs.addTab("Báo cáo",tabBaoCao());
         tabs.addChangeListener(e->{
             capNhatNav();
             if(tabs.getSelectedComponent()==phieu) {
                 if(boQuaTaiPhieu)boQuaTaiPhieu=false;
                 else phieu.load();
-            }else if(tabs.getSelectedComponent()==thuPhiTab)load();
+            }else if(tabs.getSelectedComponent()==thuPhiTab
+                    ||tabs.getSelectedIndex()==(coSo==CoSo.MAM_NON?4:2))load();
         });
         add(tabs,BorderLayout.CENTER);
         capNhatNav();
@@ -147,13 +162,22 @@ public final class TaiChinhPanel extends JPanel {
         for(int col:new int[]{3,4,5})sorter.setComparator(col,(a,b)->
             soTienHienThi(a).compareTo(soTienHienThi(b)));
         tThuPhi.setRowSorter(sorter);
-        tThuPhi.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
+        tThuPhi.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         TableColumnModel columns=tThuPhi.getColumnModel();
-        int[] widths={84,135,218,112,108,108,103,128,96};
+        int[] widths={145,220,350,120,120,120,112,145,95};
         for(int i=0;i<widths.length;i++){
             columns.getColumn(i).setPreferredWidth(widths[i]);
             columns.getColumn(i).setMinWidth(i==2?130:i==8?72:65);
         }
+        DefaultTableCellRenderer textCell=new DefaultTableCellRenderer(){
+            @Override public Component getTableCellRendererComponent(JTable table,Object value,
+                    boolean selected,boolean focus,int row,int col){
+                super.getTableCellRendererComponent(table,value,selected,focus,row,col);
+                setToolTipText(value==null?null:value.toString());
+                return this;
+            }
+        };
+        for(int col:new int[]{0,1,2,6})columns.getColumn(col).setCellRenderer(textCell);
         for(int i=3;i<=5;i++)columns.getColumn(i).setCellRenderer(new DefaultTableCellRenderer(){
             @Override public Component getTableCellRendererComponent(JTable table,Object value,
                     boolean selected,boolean focus,int row,int col){
@@ -222,6 +246,7 @@ public final class TaiChinhPanel extends JPanel {
                 case TongHopThuPhi.CHUA_DONG -> new Color(255,230,229);
                 case TongHopThuPhi.MOT_PHAN -> new Color(255,244,205);
                 case TongHopThuPhi.CHUA_LAP -> new Color(236,231,255);
+                case TongHopThuPhi.THU_VUOT -> new Color(255,217,217);
                 default -> new Color(235,239,237);
             };
             setForeground(switch(state){
@@ -229,6 +254,7 @@ public final class TaiChinhPanel extends JPanel {
                 case TongHopThuPhi.CHUA_DONG -> new Color(183,44,41);
                 case TongHopThuPhi.MOT_PHAN -> new Color(163,99,0);
                 case TongHopThuPhi.CHUA_LAP -> new Color(95,56,180);
+                case TongHopThuPhi.THU_VUOT -> new Color(170,30,30);
                 default -> new Color(78,90,83);
             });
             setFont(TaiChinhUi.font(Font.BOLD,11));
@@ -398,17 +424,51 @@ public final class TaiChinhPanel extends JPanel {
     }
     private JPanel tabTienAn() {
         JButton add=TaiChinhUi.nut("+ Thiết lập đơn giá tiền ăn",true);
+        JButton policy=TaiChinhUi.nut("Chính sách tiền ăn",false);
         add.addActionListener(e->thietLapPhi(true));
+        policy.addActionListener(e->cauHinhTienAn());
         JPanel p=new JPanel(new BorderLayout(7,8));
-        p.add(TaiChinhUi.hang(add,new JLabel("Đơn giá/ngày và tiền ăn theo bảng đã chốt")),BorderLayout.NORTH);
+        p.add(TaiChinhUi.hang(add,policy,new JLabel("Đơn giá theo lớp; quy tắc tính theo cơ sở và tháng hiệu lực")),BorderLayout.NORTH);
         p.add(TaiChinhUi.scroll(tTienAn),BorderLayout.CENTER);
         return p;
     }
+    private void cauHinhTienAn(){
+        YearMonth initial;
+        try{initial=YearMonth.parse(thang.getText().trim());}catch(Exception ex){initial=YearMonth.now();}
+        YearMonth ky=TaiChinhUi.chonThang(this,initial);if(ky==null)return;
+        TaiChinhUi.tai(this,()->mamNonCtrl.cauHinhTienAn(ky),current->{
+            JCheckBox present=new JCheckBox("Có mặt: tính 1 ngày",current.coMat());
+            JCheckBox excused=new JCheckBox("Vắng có phép: tính 1 ngày",current.vangCoPhep());
+            JCheckBox unexcused=new JCheckBox("Vắng không phép: tính 1 ngày",current.vangKhongPhep());
+            JPanel rules=new JPanel(new GridLayout(3,1,3,4));rules.setOpaque(false);
+            rules.add(present);rules.add(excused);rules.add(unexcused);
+            JTextField note=new JTextField(current.ghiChu()==null?"":current.ghiChu(),28);
+            String source=current.id()==0?"Quy tắc đã duyệt, chưa lưu trong SQL":
+                "Đang kế thừa chính sách từ "+current.thangBatDau();
+            JPanel form=TaiChinhUi.doc(
+                TaiChinhUi.chuThich("Đơn giá/ngày được thiết lập riêng cho từng lớp bằng nút bên cạnh. " +
+                    "Chưa điểm danh không tính tiền ăn và không được chốt tháng; ngày nghỉ không tính.",new Color(240,249,243)),
+                TaiChinhUi.nhom("Quy tắc áp dụng từ "+ky,TaiChinhUi.form(
+                    "Chính sách hiện có",new JLabel(source),"Trạng thái điểm danh",rules,"Ghi chú",note)),
+                TaiChinhUi.chuThich("Không thể lưu thay đổi từ kỳ đã có bảng tính phí trở đi; " +
+                    "các khoản đã lập cần quy trình điều chỉnh có lịch sử.",new Color(255,248,232)));
+            if(!TaiChinhUi.hopThoaiForm(this,"Chính sách tiền ăn Mầm non",
+                "Chọn quy tắc theo tháng hiệu lực, không sửa khoản thu cũ",form,"Lưu chính sách",()->{
+                    if(note.getText().trim().length()>500)throw new IllegalArgumentException("Ghi chú tối đa 500 ký tự.");
+                }))return;
+            TaiChinhUi.ghi(this,()->{
+                mamNonCtrl.luuCauHinhTienAn(ky,present.isSelected(),excused.isSelected(),
+                    unexcused.isSelected(),note.getText());return null;
+            },this::load);
+        });
+    }
     private JPanel tabBaoCao() {
-        JPanel body=new JPanel(new GridLayout(3,2,12,12));
+        JPanel body=new JPanel(new GridLayout(3,3,12,12));
         body.setBorder(BorderFactory.createEmptyBorder(18,10,18,10));
-        String[] titles={"Doanh thu trong tháng","Doanh thu tất cả kỳ","Phải thu đang hiệu lực",
-            "Công nợ hiện tại","Số khoản còn nợ","Số khoản đã đóng đủ"};
+        body.setPreferredSize(new Dimension(0,265));
+        String[] titles={"Thực thu kỳ đã chọn","Thực thu toàn bộ","Phải thu đang hiệu lực",
+            "Công nợ hiện tại","Số khoản còn nợ","Số khoản đã đóng đủ",
+            "Giảm giá đăng ký Trung tâm","Số học viên còn nợ","Số phiếu thu hợp lệ"};
         for(int i=0;i<thongKe.length;i++) {
             JPanel card=new JPanel(new BorderLayout(7,7));
             card.setBorder(BorderFactory.createCompoundBorder(
@@ -419,10 +479,40 @@ public final class TaiChinhPanel extends JPanel {
             number.setForeground(TaiChinhUi.XANH);thongKe[i]=number;
             card.add(label,BorderLayout.NORTH);card.add(number,BorderLayout.CENTER);body.add(card);
         }
-        JPanel p=new JPanel(new BorderLayout(8,8));p.add(body,BorderLayout.CENTER);
-        JLabel note=new JLabel("Công nợ là số dư hiện tại; chưa đối trừ tín dụng học phí/bù trừ chuyển lớp.");
-        note.setForeground(new Color(133,83,29));p.add(note,BorderLayout.SOUTH);
+        JPanel p=new JPanel(new BorderLayout(8,8));
+        JPanel top=new JPanel(new BorderLayout());top.setOpaque(false);top.add(body,BorderLayout.CENTER);
+        reportFrom.setToolTipText("yyyy-MM-dd; để trống hai ô để dùng kỳ báo cáo ở trên");
+        reportTo.setToolTipText("yyyy-MM-dd; ngày kết thúc được tính trong báo cáo");
+        JPanel controls=TaiChinhUi.hang(new JLabel("Từ ngày:"),reportFrom,
+            new JLabel("Đến ngày:"),reportTo,new JLabel("Gộp:"),reportGroup);
+        top.add(controls,BorderLayout.SOUTH);p.add(top,BorderLayout.NORTH);
+        p.add(TaiChinhUi.scroll(tBaoCao),BorderLayout.CENTER);
+        reportGroup.addActionListener(e->hienThiBaoCao());
+        reportFrom.addActionListener(e->load());reportTo.addActionListener(e->load());
+        JLabel note=new JLabel("Tiền thực thu theo kỳ báo cáo; phải thu và công nợ là số dư hiện tại. Chưa đối trừ tín dụng/bù trừ chuyển lớp.");
+        note.setForeground(new Color(133,83,29));
+        JPanel foot=TaiChinhUi.doc(reportTotal,note);p.add(foot,BorderLayout.SOUTH);
         return p;
+    }
+    private void hienThiBaoCao(){
+        mBaoCao.setRowCount(0);
+        Map<String,BigDecimal> grouped=new LinkedHashMap<>();
+        for(TaiChinhDTO.DongThuBaoCao row:reportRows){
+            String key=switch(reportGroup.getSelectedIndex()){
+                case 1->YearMonth.from(row.ngayThu()).toString();
+                case 2->row.khoaHoacKhoan();
+                case 3->row.nhanVien();
+                default->row.ngayThu().toString();
+            };
+            grouped.merge(key,row.phanBoRong(),BigDecimal::add);
+        }
+        BigDecimal sum=BigDecimal.ZERO;
+        for(var entry:grouped.entrySet()){
+            mBaoCao.addRow(new Object[]{entry.getKey(),tien(entry.getValue())});
+            sum=sum.add(entry.getValue());
+        }
+        reportTotal.setText(grouped.isEmpty()?"Không có phân bổ trong kỳ đã chọn."
+            :"Tổng phân bổ ròng theo nhóm: "+tien(sum));
     }
     private YearMonth ky() {
         try{return YearMonth.parse(thang.getText().trim());}
@@ -432,11 +522,27 @@ public final class TaiChinhPanel extends JPanel {
         List<TaiChinhDTO.HocPhiTrungTam> hocPhi,List<TaiChinhDTO.MucPhi> phi,
         List<TaiChinhDTO.DangKyChuaThu> dangKy,List<TaiChinhDTO.BangTinhChot> bangTinh,
         List<TaiChinhDTO.LuaChon> lop,List<TaiChinhDTO.LuaChon> taiKhoan,
-        TaiChinhDTO.ThongKe report) {}
+        TaiChinhDTO.ThongKe report,List<TaiChinhDTO.DongThuBaoCao> reportRows) {}
+    private record ChiTietTaiChinh(List<TaiChinhDTO.LichSuThu> history,
+                                    List<TaiChinhDTO.UuDaiDangKy> uuDai) {}
 
     private void load() {
         YearMonth month;
         try{month=ky();}catch(Exception ex){TaiChinhUi.loi(this,ex);return;}
+        final LocalDate from,to;
+        try{
+            if((reportFrom.getText().isBlank()&&reportTo.getText().isBlank())
+                    ||tabs.getSelectedIndex()!=(coSo==CoSo.MAM_NON?4:2)
+                    &&(reportFrom.getText().isBlank()||reportTo.getText().isBlank())){
+                from=month.atDay(1);to=month.plusMonths(1).atDay(1);
+            }else{
+                if(reportFrom.getText().isBlank()||reportTo.getText().isBlank())
+                    throw new IllegalArgumentException("Nhập đủ từ ngày và đến ngày báo cáo.");
+                from=LocalDate.parse(reportFrom.getText().trim());
+                to=LocalDate.parse(reportTo.getText().trim()).plusDays(1);
+                if(!from.isBefore(to))throw new IllegalArgumentException("Khoảng báo cáo không hợp lệ.");
+            }
+        }catch(Exception ex){TaiChinhUi.loi(this,ex);return;}
         status.setText("Đang tải dữ liệu tài chính cho "+coSo.ten()+"...");
         TaiChinhUi.tai(this,()->new Data(ctrl.khoan(coSo),
             coSo==CoSo.TRUNG_TAM?ctrl.hocPhiTrungTam():List.of(),
@@ -444,8 +550,10 @@ public final class TaiChinhPanel extends JPanel {
             coSo==CoSo.TRUNG_TAM?ctrl.dangKy():List.of(),
             coSo==CoSo.MAM_NON?ctrl.bangTinh():List.of(),
             coSo==CoSo.MAM_NON?ctrl.lopMamNon():List.of(),
-            ctrl.taiKhoan(coSo),ctrl.thongKe(coSo,month)), result->{
+            ctrl.taiKhoan(coSo),ctrl.thongKe(coSo,from,to),
+            ctrl.baoCaoThu(coSo,from,to)), result->{
                 khoan=result.khoan();hocPhi=result.hocPhi();phi=result.phi();
+                reportRows=result.reportRows();hienThiBaoCao();
                 dangKy=result.dangKy();bangTinh=result.bangTinh();
                 classes=result.lop();accounts=result.taiKhoan();
                 tongHop=coSo==CoSo.TRUNG_TAM
@@ -460,7 +568,9 @@ public final class TaiChinhPanel extends JPanel {
                 TaiChinhDTO.ThongKe d=result.report();
                 String[] values={tien(d.doanhThuThang()),tien(d.daThuToanBo()),
                     tien(d.tongPhaiThuHieuLuc()),tien(d.congNoHienTai()),
-                    Long.toString(d.soKhoanConNo()),Long.toString(d.soKhoanDaTatToan())};
+                    Long.toString(d.soKhoanConNo()),Long.toString(d.soKhoanDaTatToan()),
+                    tien(d.tongGiamGia()),Long.toString(d.soHocVienConNo()),
+                    Long.toString(d.soPhieuHopLe())};
                 for(int i=0;i<thongKe.length;i++)thongKe[i].setText(values[i]);
                 status.setText("Đã tải "+tongHop.size()+" dòng thu phí ("+khoan.size()
                     +" khoản đã lập) – "+coSo.ten());
@@ -498,7 +608,8 @@ public final class TaiChinhPanel extends JPanel {
         List<Dong> visible=new ArrayList<>();
         String keyword=timKiem(search.getText());
         for(Dong d:tongHop) {
-            String content=d.hocVien()+" "+d.noiDung()+" "+d.maHienThi()+" "+d.tenLoai();
+            String content=d.hocVien()+" "+d.noiDung()+" "+d.maHienThi()+" "+d.tenLoai()
+                +" "+d.maHocVien()+" "+d.soDienThoai();
             if(!keyword.isEmpty()&&!timKiem(content).contains(keyword))continue;
             if(!"Tất cả trạng thái".equals(tenChon(cbTrangThai))
                 &&!d.trangThai().equals(tenChon(cbTrangThai)))continue;
@@ -515,7 +626,8 @@ public final class TaiChinhPanel extends JPanel {
         int start=currentPage*PAGE_SIZE,end=Math.min(visible.size(),start+PAGE_SIZE);
         dangHienThi=new ArrayList<>(visible.subList(start,end));
         for(Dong d:dangHienThi)
-            mThuPhi.addRow(new Object[]{d.maHienThi(),d.hocVien(),d.noiDung(),
+            mThuPhi.addRow(new Object[]{d.maHocVien()>0?"HV #"+d.maHocVien()+" / "+d.maHienThi():d.maHienThi(),
+                d.hocVien(),d.noiDung(),
                 tien(d.phaiThu()),d.chuaLap()?"—":tien(d.daThu()),
                 d.chuaLap()?"—":tien(d.conNo()),
                 d.han()==null?"—":d.han().toString(),d.trangThai(),
@@ -556,6 +668,11 @@ public final class TaiChinhPanel extends JPanel {
     }
     private void xemChiTiet() {
         Dong d=batBuocChon();if(d==null)return;
+        TaiChinhUi.tai(this,()->new ChiTietTaiChinh(
+            d.maHocVien()>0?ctrl.lichSuThuHocVien(coSo,d.maHocVien()):List.of(),
+            coSo==CoSo.TRUNG_TAM&&d.maHocVien()>0
+                ?ctrl.uuDaiHocVien(d.maHocVien()):List.of()),data->{
+        List<TaiChinhDTO.LichSuThu> history=data.history();
         JPanel money=TaiChinhUi.theTien(
             new String[]{"Phải thu","Đã đóng","Còn nợ"},
             new String[]{tien(d.phaiThu()),d.chuaLap()?"Chưa phát sinh":tien(d.daThu()),
@@ -563,18 +680,78 @@ public final class TaiChinhPanel extends JPanel {
             new Color[]{TaiChinhUi.XANH_DAM,new Color(27,91,168),new Color(184,48,39)});
         JPanel detail=TaiChinhUi.thongTinHaiCot(
             "Mã khoản / nguồn",d.maHienThi(),"Học viên",d.hocVien(),
+            "Mã học viên",d.maHocVien()>0?String.valueOf(d.maHocVien()):"—",
+            "Số điện thoại",d.soDienThoai()==null?"—":d.soDienThoai(),
             "Loại khoản",d.tenLoai(),"Trạng thái",d.trangThai(),
             "Học phí gốc",tien(d.goc()),"Giảm giá",tien(d.giam()),
             "Điều chỉnh",tien(d.dieuChinh()),
             "Hạn thanh toán",d.han()==null?"Chưa thiết lập":d.han().toString(),
             "Nội dung",d.noiDung());
-        JPanel content=TaiChinhUi.doc(money,TaiChinhUi.nhom("Thông tin khoản thu",detail),
-            TaiChinhUi.chuThich(d.chuaLap()
+        List<JComponent> sections=new ArrayList<>();
+        sections.add(money);
+        sections.add(TaiChinhUi.nhom("Thông tin khoản thu",detail));
+        if(coSo==CoSo.TRUNG_TAM&&d.maHocVien()>0){
+            List<Dong> courses=tongHop.stream().filter(item->item.maHocVien()==d.maHocVien()
+                &&"HOC_PHI_KHOA".equals(item.loai())
+                &&!TongHopThuPhi.DA_HUY.equals(item.trangThai())).toList();
+            DefaultTableModel model=TaiChinhUi.model("Đăng ký","Khóa học","Ưu đãi đã chốt",
+                "Gốc","Giảm","Phải thu","Đã đóng","Còn nợ","Trạng thái");
+            BigDecimal goc=BigDecimal.ZERO,giam=BigDecimal.ZERO,due=BigDecimal.ZERO,
+                paid=BigDecimal.ZERO,debt=BigDecimal.ZERO;
+            for(Dong course:courses){
+                String tenUuDai=data.uuDai().stream()
+                    .filter(item->item.maDangKy()==course.maNguon())
+                    .map(TaiChinhDTO.UuDaiDangKy::tenSnapshot)
+                    .collect(java.util.stream.Collectors.joining(", "));
+                if(tenUuDai.isBlank())tenUuDai=course.giam().signum()>0
+                    ?"Chưa có snapshot chi tiết":"—";
+                goc=goc.add(course.goc());giam=giam.add(course.giam());
+                due=due.add(course.phaiThu());paid=paid.add(course.daThu());
+                if(!course.chuaLap())debt=debt.add(course.conNo());
+                model.addRow(new Object[]{"#"+course.maNguon(),course.khoa(),tenUuDai,
+                    tien(course.goc()),tien(course.giam()),tien(course.phaiThu()),
+                    course.chuaLap()?"Chưa phát sinh":tien(course.daThu()),
+                    course.chuaLap()?"Chưa phát sinh":tien(course.conNo()),course.trangThai()});
+            }
+            JTable table=TaiChinhUi.bang(model);
+            table.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+            int[] widths={85,170,190,110,100,110,110,110,130};
+            for(int i=0;i<widths.length;i++)table.getColumnModel().getColumn(i)
+                .setPreferredWidth(widths[i]);
+            JScrollPane scroll=TaiChinhUi.scroll(table);
+            scroll.setPreferredSize(new Dimension(620,Math.min(210,75+courses.size()*28)));
+            JPanel sum=TaiChinhUi.thongTinHaiCot("Tổng gốc",tien(goc),"Tổng giảm",tien(giam),
+                "Tổng phải thu",tien(due),"Đã đóng",tien(paid),"Còn nợ đã lập",tien(debt));
+            sections.add(TaiChinhUi.nhom("Các khóa của học viên",TaiChinhUi.doc(sum,scroll)));
+        }
+        if(coSo==CoSo.TRUNG_TAM&&"HOC_PHI_KHOA".equals(d.loai())){
+            TaiChinhDTO.HocPhiTrungTam h=hocPhi.stream()
+                .filter(item->item.maDangKy()==d.maNguon()).findFirst().orElse(null);
+            String ngay=h==null||h.ngayThuGanNhat()==null?"Chưa có lần thu":h.ngayThuGanNhat().format(NGAY_GIO);
+            String soTien=h==null||h.soTienLanThu()==null?"—":tien(h.soTienLanThu());
+            String soPhieu=h==null||h.soPhieuGanNhat()==null?"—":h.soPhieuGanNhat();
+            sections.add(TaiChinhUi.nhom("Lần thu gần nhất",TaiChinhUi.thongTinHaiCot(
+                "Ngày thu",ngay,"Số tiền phân bổ",soTien,"Số phiếu",soPhieu)));
+        }
+        if(d.maHocVien()>0){
+            DefaultTableModel payments=TaiChinhUi.model("Phiếu","Ngày thu","Khóa / khoản",
+                "Số phân bổ","Trạng thái");
+            for(TaiChinhDTO.LichSuThu item:history)payments.addRow(new Object[]{
+                item.soPhieu(),item.ngayThu().format(NGAY_GIO),item.khoaHoc(),
+                tien(item.soTien()),item.trangThai()});
+            JTable table=TaiChinhUi.bang(payments);
+            JScrollPane scroll=TaiChinhUi.scroll(table);
+            scroll.setPreferredSize(new Dimension(620,Math.min(210,75+history.size()*27)));
+            sections.add(TaiChinhUi.nhom("Lịch sử phân bổ và phiếu thu",scroll));
+        }
+        sections.add(TaiChinhUi.chuThich(d.chuaLap()
                 ?"Khoản này là học phí dự kiến. Chưa phát sinh công nợ hoặc phiếu thu."
                 :"Số tiền đã đóng được tổng hợp từ các phiếu thu hợp lệ; không chỉnh trực tiếp tại đây.",
                 new Color(240,249,243)));
+        JPanel content=TaiChinhUi.doc(sections.toArray(new JComponent[0]));
         TaiChinhUi.xemThongTin(this,"Chi tiết thu phí – "+d.hocVien(),
             "Xem đầy đủ thông tin học phí và trạng thái thanh toán",content);
+        });
     }
     private void lapPhieuTuDong() {
         Dong d=batBuocChon();if(d==null)return;
@@ -685,7 +862,7 @@ public final class TaiChinhPanel extends JPanel {
             private void update(){
                 try{
                     BigDecimal next=selected.phaiThu().add(TaiChinhService.tienDieuChinh(amount.getText()));
-                    after.setText("Phải thu mới: "+tien(next)+"   |   Còn nợ: "+tien(next.subtract(selected.daThu()).max(BigDecimal.ZERO)));
+                    after.setText("Phải thu mới: "+tien(next)+"   |   Còn nợ: "+tien(next.subtract(selected.daThu())));
                     after.setForeground(next.compareTo(selected.daThu())<0?new Color(190,42,42):TaiChinhUi.XANH_DAM);
                 }catch(Exception ex){after.setText("Nhập + hoặc - và số tiền, ví dụ -100000");}
             }

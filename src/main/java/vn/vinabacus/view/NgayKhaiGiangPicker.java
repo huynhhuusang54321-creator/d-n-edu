@@ -40,8 +40,10 @@ public final class NgayKhaiGiangPicker extends JPanel {
 
     public LocalDate layNgay() { return ngayDaChon; }
     public void datNgay(LocalDate ngay) {
+        LocalDate truoc = ngayDaChon;
         ngayDaChon = ngay;
         txtNgay.setText(ngay == null ? "" : ngay.format(DINH_DANG));
+        firePropertyChange("ngay", truoc, ngay);
     }
     public static String hienThiNgay(LocalDate ngay) {
         return ngay == null ? "" : ngay.format(DINH_DANG);
@@ -64,7 +66,7 @@ public final class NgayKhaiGiangPicker extends JPanel {
         private static final int NAM_MAX = 2100;
 
         HopThoaiLich(Window owner) {
-            super(owner, "Chọn ngày khai giảng", Dialog.ModalityType.APPLICATION_MODAL);
+            super(owner, "Chọn ngày", Dialog.ModalityType.APPLICATION_MODAL);
             thangDangXem = YearMonth.from(ngayDaChon == null ? LocalDate.now() : ngayDaChon);
             spThang = new JSpinner(new SpinnerNumberModel(
                     thangDangXem.getMonthValue(), 1, 12, 1));

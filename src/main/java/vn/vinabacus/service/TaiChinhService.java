@@ -5,8 +5,10 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.UUID;
 import vn.vinabacus.model.TaiChinhDTO;
 import vn.vinabacus.repository.TaiChinhRepository;
+import vn.vinabacus.repository.TaiChinhDangKyRepository;
 import vn.vinabacus.model.CoSo;
 
 /** Tính toán, kiểm tra dữ liệu nghiệp vụ độc lập Swing. */
@@ -35,7 +37,7 @@ public final class TaiChinhService {
     public static BigDecimal conNo(BigDecimal phaiThu, BigDecimal daThanhToan) {
         if (phaiThu.signum() < 0 || daThanhToan.signum() < 0)
             throw new IllegalArgumentException("Số tiền không hợp lệ.");
-        return phaiThu.subtract(daThanhToan).max(BigDecimal.ZERO);
+        return phaiThu.subtract(daThanhToan);
     }
     public static BigDecimal sauGiam(BigDecimal goc, BigDecimal giam) {
         if (goc.signum() < 0 || giam.signum() < 0 || giam.compareTo(goc) > 0)
@@ -48,6 +50,26 @@ public final class TaiChinhService {
     }
     public List<TaiChinhDTO.KhoanThu> khoanThu(CoSo coSo) throws Exception { return repo.khoanThu(coSo); }
     public List<TaiChinhDTO.PhieuThu> phieuThu(CoSo coSo,YearMonth thang) throws Exception { return repo.phieuThu(coSo,thang); }
+    public List<TaiChinhDTO.PhieuThu> phieuThu(CoSo coSo,LocalDate tuNgay,LocalDate denTruoc)throws Exception {
+        return repo.phieuThu(coSo,tuNgay,denTruoc);
+    }
+    public List<TaiChinhDTO.PhanBoPhieu> phanBoPhieu(CoSo coSo,int maPhieu) throws Exception {
+        return repo.phanBoPhieu(coSo,maPhieu);
+    }
+    public List<TaiChinhDTO.LichSuThu> lichSuThuHocVien(CoSo coSo,int maHocVien)throws Exception {
+        return repo.lichSuThuHocVien(coSo,maHocVien);
+    }
+    public List<TaiChinhDTO.UuDaiDangKy> uuDaiHocVien(int maHocVien)throws Exception {
+        return repo.uuDaiHocVien(maHocVien);
+    }
+    public int lapPhieuNhieuKhoan(CoSo coSo,int maHocVien,BigDecimal soTien,
+            List<TaiChinhDangKyRepository.PhanBo> phanBo,String hinhThuc,
+            int taiKhoan,String ghiChu,UUID token) throws Exception {
+        return repo.lapPhieuNhieuKhoan(coSo,maHocVien,soTien,phanBo,hinhThuc,taiKhoan,ghiChu,token);
+    }
+    public void huyPhieu(CoSo coSo,int maPhieu,int taiKhoan,String lyDo) throws Exception {
+        repo.huyPhieu(coSo,maPhieu,taiKhoan,lyDo);
+    }
     public List<TaiChinhDTO.LuaChon> taiKhoan(CoSo coSo) throws Exception { return repo.taiKhoan(coSo); }
     public List<TaiChinhDTO.LuaChon> lopMamNon() throws Exception { return repo.lopMamNon(); }
     public List<TaiChinhDTO.DangKyChuaThu> dangKyChuaThu() throws Exception { return repo.dangKyChuaThu(); }
@@ -59,6 +81,12 @@ public final class TaiChinhService {
     }
     public List<TaiChinhDTO.MucPhi> mucPhiMamNon() throws Exception { return repo.mucPhiMamNon(); }
     public TaiChinhDTO.ThongKe thongKe(CoSo coSo, YearMonth thang) throws Exception { return repo.thongKe(coSo,thang); }
+    public TaiChinhDTO.ThongKe thongKe(CoSo coSo,LocalDate tu,LocalDate den)throws Exception {
+        return repo.thongKe(coSo,tu,den);
+    }
+    public List<TaiChinhDTO.DongThuBaoCao> baoCaoThu(CoSo coSo,LocalDate tu,LocalDate den)throws Exception {
+        return repo.baoCaoThu(coSo,tu,den);
+    }
     public void lapKhoanHocPhiKhoa(int dangKy, LocalDate han) throws Exception { repo.lapKhoanHocPhiKhoa(dangKy,han); }
     public int lapKhoanMamNon(int bangTinh, boolean hocPhi,boolean tienAn,LocalDate han) throws Exception { return repo.lapKhoanMamNon(bangTinh,hocPhi,tienAn,han); }
     public void taoMucPhi(int maLop, boolean tienAn, LocalDate apDung, BigDecimal tien, int taiKhoan) throws Exception {

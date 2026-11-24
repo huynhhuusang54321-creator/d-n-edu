@@ -3,6 +3,7 @@ package vn.vinabacus.controller;
 import java.sql.SQLException;
 import java.util.List;
 import vn.vinabacus.model.CoSo;
+import vn.vinabacus.model.KhoaHoc;
 import vn.vinabacus.model.MonHoc;
 import vn.vinabacus.service.MonHocService;
 
@@ -16,6 +17,8 @@ public final class MonHocController {
     public List<MonHoc> timKiem(String tuKhoa, Boolean trangThai) throws SQLException {
         return service.timKiem(tuKhoa, trangThai);
     }
+
+    public List<KhoaHoc> khoaHoc() throws SQLException { return service.khoaHoc(); }
 
     public int them(String ten, String ghiChu, boolean trangThai) throws SQLException {
         return service.them(ten, ghiChu, trangThai);

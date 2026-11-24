@@ -6,12 +6,15 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import vn.vinabacus.model.CoSo;
+import vn.vinabacus.model.KhoaHoc;
 import vn.vinabacus.model.MonHoc;
+import vn.vinabacus.repository.KhoaHocRepository;
 import vn.vinabacus.repository.MonHocRepository;
 
 public final class MonHocService {
     private final CoSo coSo;
     private final MonHocRepository repo = new MonHocRepository();
+    private final KhoaHocRepository khoaRepo = new KhoaHocRepository();
 
     public MonHocService(CoSo coSo) {
         if (coSo != CoSo.TRUNG_TAM) {
@@ -31,6 +34,10 @@ public final class MonHocService {
             ketQua.add(m);
         }
         return ketQua;
+    }
+
+    public List<KhoaHoc> khoaHoc() throws SQLException {
+        return khoaRepo.layDanhSach(repo.layMaCoSo(coSo));
     }
 
     public int them(String ten, String ghiChu, boolean trangThai) throws SQLException {

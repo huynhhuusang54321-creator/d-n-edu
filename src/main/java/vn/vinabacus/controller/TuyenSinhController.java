@@ -12,5 +12,9 @@ public final class TuyenSinhController {
     }
     public int them(KhachTiemNang k)throws SQLException{return service.them(coSo,k);}
     public void sua(KhachTiemNang k)throws SQLException{service.sua(coSo,k);}
+    public void suaThongTin(KhachTiemNang k)throws SQLException{service.suaThongTin(coSo,k);}
+    public void chuyenTrangThai(int maKhach,String trangThai)throws SQLException{
+        service.chuyenTrangThai(coSo,maKhach,trangThai);
+    }
     public int chuyenDoi(int maKhach)throws SQLException{return service.chuyenDoi(coSo,maKhach);}
 }
